@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RSS Brief</title>
+  <link rel="stylesheet" href="RSSBrief_utils/RSSBrief_styles.css">
+</head>
+<body>
+
+<div class="page-wrap">
+  <div class="main-container">
+
+    <!-- ============ HEADER ============ -->
+    <div class="header-row">
+      <div class="header-accent-left"></div>
+      <div class="header-body">
+        <div class="header-title" id="header-title">RSS Brief</div>
+        <div class="header-date"  id="header-date"></div>
+        <div class="header-time"  id="header-time"></div>
+      </div>
+      <div class="header-accent-right"></div>
+    </div>
+
+    <!-- ============ STATS BAR ============ -->
+    <div class="stats-bar">
+      <div class="stats-count">
+        <span id="stats-count-label">— ARTICLES</span>
+        <button class="refresh-btn" id="refresh-btn">↻</button>
+      </div>
+      <div class="stats-label">
+        <span>Latest Updates</span>
+        <div class="meta-inline" id="meta-inline">
+          <span class="cache-dot" id="cache-dot"></span>
+          <span class="cache-text"></span>
+          <span class="cache-time"></span>
+        </div>
+        <div class="controls">
+          <span id="filter-buttons"></span>
+        </div>
+      </div>
+      <div class="stats-accent"></div>
+    </div>
+
+    <!-- ============ SOURCES PANEL ============ -->
+    <div class="sources-detail" id="sources-detail"></div>
+
+    <!-- ============ ARTICLES ============ -->
+    <div id="articles-wrapper"></div>
+
+    <!-- ============ FOOTER ============ -->
+    <div class="footer-row">
+      <div class="footer-yellow"></div>
+      <div class="footer-body">
+        <span class="footer-text">RSS Brief · Live RSS</span>
+      </div>
+      <div class="footer-red"></div>
+      <div class="footer-blue"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================================================
+     CONFIGURATION
+     Edit window.BRIEF_CONFIG to customize the page.
+
+     title            — header/page title
+     totalArticles    — max articles shown after dedup
+     maxPerSource     — max articles per feed before dedup
+     cacheTTLMinutes  — how long to reuse cached data (default 15)
+     dedupThreshold   — title similarity 0–1 to treat as duplicate (default 0.72)
+     rss2jsonApiKey   — optional free key from https://rss2json.com/#rss_to_json_api
+     sources          — list of { name, url, category }
+     ============================================================ -->
+<script>
+window.BRIEF_CONFIG = {
+  title: "RSS Brief",
+  totalArticles: 30,
+  maxPerSource: 5,
+  cacheTTLMinutes: 15,
+  dedupThreshold: 0.72,
+  rss2jsonApiKey: null, // get a free key at https://rss2json.com/#rss_to_json_api
+
+  sources: [
+    // ——— News ———
+    { name: "BBC News - World",                  url: "http://feeds.bbci.co.uk/news/world/rss.xml",                                                                                         category: "News" },
+    { name: "The New York Times",                url: "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",                                                                          category: "News" },
+    { name: "Reuters",                           url: "https://news.google.com/rss/search?q=site%3Areuters.com&hl=en-US&gl=US&ceid=US%3Aen",                                               category: "News" },
+    { name: "The Guardian US",                   url: "https://www.theguardian.com/us-news/rss",                                                                                            category: "News" },
+    { name: "NPR",                               url: "https://feeds.npr.org/1001/rss.xml",                                                                                                 category: "News" },
+    { name: "Vox",                               url: "https://www.vox.com/rss/index.xml",                                                                                                  category: "News" },
+    { name: "Washington Post",                   url: "https://feeds.washingtonpost.com/rss/world",                                                                                         category: "News" },
+    { name: "Slate",                             url: "https://slate.com/feeds/all.rss",                                                                                                    category: "News" },
+    { name: "WSJ - World",                       url: "https://feeds.content.dowjones.io/public/rss/RSSWorldNews",                                                                          category: "News" },
+    { name: "WSJ - Politics",                    url: "https://feeds.content.dowjones.io/public/rss/socialpoliticsfeed",                                                                    category: "News" },
+    { name: "WSJ - U.S.",                        url: "https://feeds.content.dowjones.io/public/rss/RSSUSnews",                                                                             category: "News" },
+    { name: "WSJ - Economy",                     url: "https://feeds.content.dowjones.io/public/rss/socialeconomyfeed",                                                                     category: "News" },
+
+    // ——— Tech ———
+    { name: "TechCrunch",                        url: "https://techcrunch.com/feed/",                                                                                                       category: "Tech" },
+    { name: "The Verge",                         url: "https://www.theverge.com/rss/index.xml",                                                                                            category: "Tech" },
+    { name: "Ars Technica",                      url: "http://feeds.arstechnica.com/arstechnica/index",                                                                                    category: "Tech" },
+
+    // ——— Business ———
+    { name: "The Economist",                     url: "https://www.economist.com/latest/rss.xml",                                                                                           category: "Business" },
+    { name: "MarketWatch",                       url: "http://feeds.marketwatch.com/marketwatch/topstories/",                                                                               category: "Business" },
+    { name: "Harvard Business Review",           url: "http://feeds.harvardbusiness.org/harvardbusiness/",                                                                                  category: "Business" },
+    { name: "Economist - World This Week",       url: "https://www.economist.com/the-world-this-week/rss.xml",                                                                             category: "Business" },
+    { name: "Business Insider",                  url: "https://feeds2.feedburner.com/businessinsider",                                                                                     category: "Business" },
+    { name: "WSJ - Business",                    url: "https://feeds.content.dowjones.io/public/rss/WSJcomUSBusiness",                                                                     category: "Business" },
+
+    // ——— Government ———
+    { name: "Federal Register",                  url: "https://www.federalregister.gov/reader-aids/rss",                                                                                    category: "Government" },
+    { name: "Federal Register - Exec. Orders",   url: "https://www.federalregister.gov/api/v1/documents.rss?conditions[type][]=PRESDOCU&conditions[presidential_document_type][]=executive_order", category: "Government" },
+    { name: "White House - Presidential Actions",url: "https://www.whitehouse.gov/presidential-actions/feed/",                                                                              category: "Government" },
+    { name: "State Dept - Int'l Organizations",  url: "https://www.state.gov/rss-feed/international-organizations/feed/",                                                                  category: "Government" },
+    { name: "State Dept - Press Releases",       url: "https://www.state.gov/rss-feed/press-releases/feed/",                                                                               category: "Government" },
+    { name: "State Dept - Press Briefings",      url: "https://www.state.gov/rss-feed/department-press-briefings/feed/",                                                                   category: "Government" },
+    { name: "NASA",                              url: "https://www.nasa.gov/news-release/feed/",                                                                                            category: "Government" },
+    { name: "SEC",                               url: "https://www.sec.gov/news/pressreleases.rss",                                                                                         category: "Government" },
+    { name: "FBI",                               url: "https://www.fbi.gov/feeds/fbi-in-the-news/rss.xml",                                                                                 category: "Government" },
+    { name: "CISA",                              url: "https://www.cisa.gov/cybersecurity-advisories/all.xml",                                                                              category: "Government" },
+
+    // ——— Legal ———
+    { name: "U.S. Courts",                       url: "https://www.uscourts.gov/news/rss",                                                                                                  category: "Legal" },
+    { name: "SCOTUSblog",                        url: "https://www.scotusblog.com/feed/",                                                                                                   category: "Legal" },
+    { name: "CourtListener - SCOTUS",            url: "https://www.courtlistener.com/feed/court/scotus/",                                                                                  category: "Legal" },
+    { name: "ABA Journal - Top Stories",         url: "https://feeds.feedburner.com/abajournal/topstories",                                                                                category: "Legal" },
+    { name: "ABA Journal - Daily News",          url: "https://feeds.feedburner.com/abajournal/dailynews",                                                                                 category: "Legal" },
+  ]
+};
+</script>
+<script src="RSSBrief_utils/RSSBrief_script.js"></script>
+</body>
+</html>
