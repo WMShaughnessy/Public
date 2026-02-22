@@ -113,14 +113,15 @@ a:hover { text-decoration: underline; }
   color: var(--grey);
   text-transform: uppercase;
   letter-spacing: 1px;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border: var(--border-thick);
   border-left: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 .stats-accent {
   width: 40px;
@@ -133,23 +134,25 @@ a:hover { text-decoration: underline; }
 /* ---------- Controls ---------- */
 .controls {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
+  flex-wrap: nowrap;
+  gap: 4px;
   align-items: center;
 }
 .filter-btn {
   font-family: var(--font);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: bold;
   text-transform: uppercase;
-  letter-spacing: 1.5px;
-  padding: 4px 9px;
+  letter-spacing: 1px;
+  padding: 3px 7px;
   border: 2px solid var(--black);
   background: var(--white);
   color: var(--black);
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
   line-height: 1.4;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .filter-btn:hover,
 .filter-btn.active {
@@ -194,8 +197,8 @@ a:hover { text-decoration: underline; }
 .cache-dot.fresh { background: #2a8a2a; }
 .cache-dot.stale { background: var(--yellow); border: 1px solid #aaa; }
 
-/* Sources dropdown toggle (lives inside filter row) */
-/* No special styling needed — flows naturally as a filter-btn */
+/* Hide static label text — controls + meta provide all needed context */
+.stats-label > span:first-child { display: none; }
 
 /* ---------- Sources Detail Panel ---------- */
 .sources-detail {
@@ -475,15 +478,15 @@ a:hover { text-decoration: underline; }
   .card-preview        { font-size: 13px; }
   .stats-bar           { flex-wrap: wrap; }
   .stats-count         { min-width: unset; width: 100%; border-bottom: none; }
-  .stats-label         { width: 100%; border-left: var(--border-thick); flex-direction: column; align-items: flex-start; gap: 6px; }
+  .stats-label         { width: 100%; border-left: var(--border-thick); flex-wrap: wrap; align-items: flex-start; gap: 6px; }
   .stats-accent        { display: none; }
   .controls            { flex-wrap: wrap; gap: 4px; }
-  .filter-btn          { font-size: 9px; padding: 4px 8px; }
+  .filter-btn          { font-size: 9px; padding: 3px 7px; }
   .sources-detail      { column-count: 1; }
   .meta-inline         { display: none; }
-  .footer-yellow,
-  .footer-red,
-  .footer-blue         { display: none; }
+  .footer-yellow       { width: 16px; }
+  .footer-red          { width: 16px; }
+  .footer-blue         { width: 10px; }
 }
 
 @media (max-width: 360px) {
