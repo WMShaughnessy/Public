@@ -5,28 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Weather Brief</title>
 <style>
-    *{box-sizing:border-box}
     body{background-color:#fff!important;color:#1A1A1A!important;margin:0;padding:0}
     .bg-r{background:linear-gradient(135deg,rgb(217,33,33) 0%,rgb(217,33,33) 100%)!important;background-color:rgb(217,33,33)!important}
     .bg-b{background:linear-gradient(135deg,rgb(27,75,154) 0%,rgb(27,75,154) 100%)!important;background-color:rgb(27,75,154)!important}
     .bg-y{background:linear-gradient(135deg,rgb(247,213,0) 0%,rgb(247,213,0) 100%)!important;background-color:rgb(247,213,0)!important}
     .bg-k{background-color:#1A1A1A!important}
     table{background-color:transparent!important}
-    #ld{position:fixed;inset:0;background:#fff;display:flex;align-items:center;justify-content:center;z-index:1000;transition:opacity .4s;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;padding:15px}
+    #ld{position:fixed;inset:0;background:#fff;display:flex;align-items:center;justify-content:center;z-index:1000;transition:opacity .4s;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif}
     #ld.h{opacity:0;pointer-events:none}
     @keyframes cyc{0%,100%{background:rgb(217,33,33)}33%{background:rgb(247,213,0)}66%{background:rgb(27,75,154)}}
-    /* Outer wrapper */
-    .page-wrap{width:100%;max-width:650px;margin:0 auto;padding:30px 15px}
-    /* Header: prevent blue accent from overhanging on small screens */
-    .hdr-accent{width:140px;min-width:80px;max-width:140px}
-    /* 7-day forecast: stack columns on very small screens */
-    @media(max-width:480px){
-        .fc-cols td{display:block!important;width:100%!important;padding-top:4px!important}
-        .hdr-accent{width:60px!important;min-width:40px!important}
-        .hero-temp{font-size:52px!important;letter-spacing:-1px!important}
-        .hero-temp span{font-size:28px!important}
-        .stats-bar td{white-space:normal!important;word-break:break-word}
-    }
 </style>
 </head>
 <body>
@@ -42,11 +29,10 @@
 </tr>
 </table>
 </div>
-<div class="page-wrap">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:620px;width:100%;table-layout:fixed;margin:0 auto">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#fff"><tr><td align="center" style="padding:30px 15px">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="620" style="max-width:620px;width:100%;table-layout:fixed">
 <tbody id="out"></tbody>
-</table>
-</div>
+</table></td></tr></table>
 <script>
 // ── ICONS as clean inline SVGs with xmlns ──
 function svg(d,s=16){return `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;margin-right:4px">${d}</svg>`;}
@@ -105,7 +91,7 @@ async function getCityName(lat,lon){try{const r=await fetch(`https://api.bigdata
 async function getWeather(lat,lon){const p=new URLSearchParams({latitude:lat,longitude:lon,timezone:'auto',current:'temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,rain,snowfall,weather_code,cloud_cover,pressure_msl,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m',hourly:'temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m,uv_index,visibility,cloud_cover,apparent_temperature',daily:'weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,sunrise,sunset,uv_index_max,precipitation_sum,precipitation_probability_max,precipitation_hours,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant',forecast_days:7});const r=await fetch('https://api.open-meteo.com/v1/forecast?'+p);return r.json()}
 
 // ── LAYOUT ──
-function hdr(title,date,time){return `<tr><td style="padding-bottom:4px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td class="bg-b hdr-accent" style="border:4px solid ${B}!important;height:120px"></td><td style="background-color:#fff!important;border:4px solid ${B}!important;border-left:none;padding:20px 24px;vertical-align:middle;width:100%"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="${F}font-size:clamp(24px,5vw,36px);font-weight:bold;color:${B}!important;letter-spacing:-1px">${title}</td></tr><tr><td style="${F}font-size:12px;color:${G}!important;text-transform:uppercase;letter-spacing:2px;padding-top:6px">${date}</td></tr><tr><td style="${F}font-size:12px;color:${G}!important;text-transform:uppercase;letter-spacing:2px;padding-top:2px">${time}</td></tr></table></td><td width="60" class="bg-y" style="border:4px solid ${B}!important;border-left:none;min-width:30px"></td></tr></table></td></tr>`}
+function hdr(title,date,time){return `<tr><td style="padding-bottom:4px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td width="140" height="120" class="bg-b" style="border:4px solid ${B}!important"></td><td style="background-color:#fff!important;border:4px solid ${B}!important;border-left:none;padding:20px 30px;vertical-align:middle"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="${F}font-size:36px;font-weight:bold;color:${B}!important;letter-spacing:-1px">${title}</td></tr><tr><td style="${F}font-size:12px;color:${G}!important;text-transform:uppercase;letter-spacing:2px;padding-top:6px">${date}</td></tr><tr><td style="${F}font-size:12px;color:${G}!important;text-transform:uppercase;letter-spacing:2px;padding-top:2px">${time}</td></tr></table></td><td width="60" class="bg-y" style="border:4px solid ${B}!important;border-left:none"></td></tr></table></td></tr>`}
 
 function stats(left,right){return `<tr><td style="padding-bottom:20px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td class="bg-r" style="border:4px solid ${B}!important;padding:10px 16px;white-space:nowrap"><span style="${F}font-size:12px;font-weight:bold;color:#fff!important">${left}</span></td><td style="background-color:#fff!important;border:4px solid ${B}!important;border-left:none;padding:10px 16px;white-space:nowrap"><span style="${F}font-size:11px;color:${G}!important;letter-spacing:1px">${right}</span></td><td width="40" class="bg-k" style="border:4px solid ${B}!important"></td></tr></table></td></tr>`}
 
@@ -121,7 +107,7 @@ function divider(){return `<tr><td style="padding-top:10px;border-top:1px solid 
 
 function card(accent,tagHtml,rows){return `<tr><td style="padding:0 0 4px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td width="6" class="${accent}" style="border:3px solid ${B}!important;border-right:none"></td><td style="background-color:#fff!important;border:3px solid ${B}!important;padding:20px 24px">${tagHtml}<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${rows}</table></td></tr></table></td></tr>`}
 
-function hero(tempF,feelsF,cond,code,hi,lo,accent){return `<tr><td style="padding:0 0 4px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td width="6" class="${accent}" style="border:3px solid ${B}!important;border-right:none"></td><td style="background-color:#fff!important;border:3px solid ${B}!important;padding:28px 24px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="vertical-align:middle"><div style="${F}font-size:76px;font-weight:bold;color:${B}!important;line-height:1;letter-spacing:-3px" class="hero-temp">${tempF}°<span style="font-size:40px">F</span></div><div style="${F}font-size:14px;color:${B}!important;padding-top:8px">${I('therm')} Feels like <strong>${feelsF}°F</strong></div><div style="${F}font-size:13px;color:${B}!important;padding-top:4px">${I('arrow')} High ${hi}° / Low ${lo}°</div></td><td style="text-align:right;vertical-align:middle;padding-left:16px"><div style="text-align:right">${condI(code,52)}</div><div style="${F}font-size:18px;font-weight:bold;color:${B}!important;padding-top:10px;text-align:right">${cond}</div></td></tr></table></td></tr></table></td></tr>`}
+function hero(tempF,feelsF,cond,code,hi,lo,accent){return `<tr><td style="padding:0 0 4px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td width="6" class="${accent}" style="border:3px solid ${B}!important;border-right:none"></td><td style="background-color:#fff!important;border:3px solid ${B}!important;padding:28px 24px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="vertical-align:middle"><div style="${F}font-size:76px;font-weight:bold;color:${B}!important;line-height:1;letter-spacing:-3px">${tempF}°<span style="font-size:40px">F</span></div><div style="${F}font-size:14px;color:${B}!important;padding-top:8px">${I('therm')} Feels like <strong>${feelsF}°F</strong></div><div style="${F}font-size:13px;color:${B}!important;padding-top:4px">${I('arrow')} High ${hi}° / Low ${lo}°</div></td><td style="text-align:right;vertical-align:middle;padding-left:16px"><div style="text-align:right">${condI(code,52)}</div><div style="${F}font-size:18px;font-weight:bold;color:${B}!important;padding-top:10px;text-align:right">${cond}</div></td></tr></table></td></tr></table></td></tr>`}
 
 function hourly(hrs,accent){let c='';for(const h of hrs){c+=`<div style="display:inline-block;text-align:center;padding:12px 8px;border-right:1px solid #e8e8e8;vertical-align:top;min-width:72px"><div style="${F}font-size:10px;color:${B};text-transform:uppercase;letter-spacing:1px;font-weight:bold">${h.time}</div><div style="padding:6px 0">${condI(h.code,20)}</div><div style="${F}font-size:18px;font-weight:bold;color:${B}">${h.temp}°</div><div style="${F}font-size:11px;color:${B};padding-top:4px">Feels ${h.feels}°</div><div style="${F}font-size:11px;color:${B};padding-top:2px">${I('drop',12)} ${h.precip}%</div><div style="${F}font-size:11px;color:${B};padding-top:2px">${I('wind',12)} ${h.wind} mph</div><div style="${F}font-size:11px;color:${G};padding-top:2px">${I('cloud',12)} ${h.clouds}%</div></div>`}
 return `<tr><td style="padding:0 0 4px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="table-layout:fixed"><tr><td width="6" class="${accent}" style="border:3px solid ${B}!important;border-right:none"></td><td style="background-color:#fff!important;border:3px solid ${B}!important;padding:16px 10px;max-width:0;overflow:hidden">${tag(IW('clock')+' Hourly Forecast')}<div style="overflow-x:auto;overflow-y:hidden;white-space:nowrap;margin-top:14px;padding-bottom:8px;-webkit-overflow-scrolling:touch">${c}</div></td></tr></table></td></tr>`}
@@ -146,21 +132,21 @@ function fcDay(d,accent){
             </tr></table>
 
             <!-- Temps -->
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="fc-cols" style="margin-top:14px"><tr>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:14px"><tr>
                 <td width="33%" style="${F}font-size:14px;color:${B};vertical-align:middle">${I('therm',14)} High <strong>${d.hi}°F</strong></td>
                 <td width="34%" style="${F}font-size:14px;color:${B};vertical-align:middle">${I('therm',14)} Low <strong>${d.lo}°F</strong></td>
                 <td width="33%" style="${F}font-size:14px;color:${B};vertical-align:middle">${I('therm',14)} Feels ${d.feelsHi}° / ${d.feelsLo}°</td>
             </tr></table>
 
             <!-- Wind & Precip -->
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="fc-cols" style="margin-top:8px"><tr>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:8px"><tr>
                 <td width="33%" style="${F}font-size:14px;color:${B};vertical-align:middle">${I('rain',14)} ${d.precip}" (${d.prob}%)</td>
                 <td width="34%" style="${F}font-size:14px;color:${B};vertical-align:middle">${I('wind',14)} ${d.wind} mph ${d.dir}</td>
                 <td width="33%" style="${F}font-size:14px;color:${B};vertical-align:middle">${I('wind',14)} Gusts ${d.gusts} mph</td>
             </tr></table>
 
             <!-- UV & Sun -->
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="fc-cols" style="margin-top:8px"><tr>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:8px"><tr>
                 <td width="33%" style="${F}font-size:14px;color:${B};vertical-align:middle">${I('uv',14)} UV ${d.uv} (${uvLabel(d.uvRaw)})</td>
                 <td width="34%" style="${F}font-size:14px;color:${B};vertical-align:middle">${I('sunrise',14)} ${d.rise}</td>
                 <td width="33%" style="${F}font-size:14px;color:${B};vertical-align:middle">${I('sunset',14)} ${d.set}</td>
@@ -170,7 +156,7 @@ function fcDay(d,accent){
         </td>
     </tr></table></td></tr>`}
 
-function footer(){return `<tr><td style="padding-top:16px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td class="bg-y" style="border:4px solid ${B}!important;width:16px;min-width:16px;max-width:50px"></td><td style="background-color:#fff!important;border:4px solid ${B}!important;border-left:none;padding:14px 20px;vertical-align:middle"><span style="${F}font-size:11px;color:#888!important;text-transform:uppercase;letter-spacing:1px">Weather Brief</span></td><td class="bg-r" style="border:4px solid ${B}!important;border-left:none;width:16px;min-width:16px;max-width:50px"></td><td class="bg-b" style="border:4px solid ${B}!important;border-left:none;width:10px;min-width:10px;max-width:30px"></td></tr></table></td></tr>`}
+function footer(){return `<tr><td style="padding-top:16px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td width="50" height="50" class="bg-y" style="border:4px solid ${B}!important"></td><td style="background-color:#fff!important;border:4px solid ${B}!important;border-left:none;padding:14px 20px;vertical-align:middle"><span style="${F}font-size:11px;color:#888!important;text-transform:uppercase;letter-spacing:1px">Weather Brief</span></td><td width="50" class="bg-r" style="border:4px solid ${B}!important;border-left:none"></td><td width="30" class="bg-b" style="border:4px solid ${B}!important;border-left:none"></td></tr></table></td></tr>`}
 
 // ── NWS ALERTS ──
 async function getAlerts(lat,lon){

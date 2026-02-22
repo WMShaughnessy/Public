@@ -409,23 +409,19 @@ function renderSourcesPanel(statuses) {
 }
 
 function initSourcesToggle() {
-  // The toggle button is injected into filter-buttons by renderCategoryFilters.
-  // This is called once on DOMContentLoaded; the actual button is created later in
-  // renderCategoryFilters so we use event delegation on the filter-buttons container.
-  const wrap = document.getElementById("filter-buttons");
-  if (!wrap) return;
+  // The toggle button is now a static element inside stats-count (#sources-toggle).
+  const btn = document.getElementById("sources-toggle");
+  if (!btn) return;
 
-  wrap.addEventListener("click", e => {
-    const btn = e.target.closest("#sources-toggle");
-    if (!btn) return;
+  btn.addEventListener("click", () => {
     const detail = document.getElementById("sources-detail");
     if (!detail) return;
     sourcesOpen = !sourcesOpen;
     detail.classList.toggle("visible", sourcesOpen);
-    // Re-read error count from current label
     const base = "Sources";
     const errorPart = btn.textContent.includes("⚠") ? " " + btn.textContent.split(" ").pop() : "";
     btn.textContent = (sourcesOpen ? `${base} ▴` : `${base} ▾`) + errorPart;
+    btn.classList.toggle("active", sourcesOpen);
   });
 }
 
@@ -434,17 +430,17 @@ function initSourcesToggle() {
    ============================================================ */
 
 function syncFilterButtons() {
+  // Sync category filter buttons
   document.querySelectorAll(".filter-btn").forEach(btn => {
-    if (btn.id === "sources-toggle") {
-      btn.classList.toggle("active", activeSource !== null);
-      return;
-    }
     const isAll = btn.textContent === "All";
     btn.classList.toggle("active",
       (isAll && activeCategory === null && activeSource === null) ||
       (!isAll && btn.textContent === activeCategory)
     );
   });
+  // Sync sources toggle button
+  const srcToggle = document.getElementById("sources-toggle");
+  if (srcToggle) srcToggle.classList.toggle("active", activeSource !== null || sourcesOpen);
 }
 
 function renderCategoryFilters(articles) {
@@ -477,13 +473,6 @@ function renderCategoryFilters(articles) {
     };
     wrap.appendChild(btn);
   }
-
-  // Sources dropdown toggle — appended last, styled as a filter-btn variant
-  const srcBtn = document.createElement("button");
-  srcBtn.id        = "sources-toggle";
-  srcBtn.className = "filter-btn" + (activeSource ? " active" : "");
-  srcBtn.textContent = sourcesOpen ? "Sources ▴" : "Sources ▾";
-  wrap.appendChild(srcBtn);
 }
 
 /* ============================================================
@@ -670,7 +659,6 @@ async function loadAllFeeds(force = false) {
   renderCategoryFilters(allArticles);
   applyFilters();
   renderSourcesPanel(feedStatuses);
-  renderMetaInline(allFromCache);
 
   isLoading = false;
   if (refreshBtn) refreshBtn.disabled = false;

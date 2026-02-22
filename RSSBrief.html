@@ -25,16 +25,13 @@
     <!-- ============ STATS BAR ============ -->
     <div class="stats-bar">
       <div class="stats-count">
-        <span id="stats-count-label">— ARTICLES</span>
-        <button class="refresh-btn" id="refresh-btn">↻</button>
+        <div class="stats-count-top">
+          <span id="stats-count-label">— ARTICLES</span>
+          <button class="refresh-btn" id="refresh-btn">↻</button>
+        </div>
+        <button class="sources-toggle-btn" id="sources-toggle">Sources ▾</button>
       </div>
       <div class="stats-label">
-        <span>Latest Updates</span>
-        <div class="meta-inline" id="meta-inline">
-          <span class="cache-dot" id="cache-dot"></span>
-          <span class="cache-text"></span>
-          <span class="cache-time"></span>
-        </div>
         <div class="controls">
           <span id="filter-buttons"></span>
         </div>
@@ -86,7 +83,7 @@ window.BRIEF_CONFIG = {
     // ——— News ———
     { name: "BBC News - World",                  url: "http://feeds.bbci.co.uk/news/world/rss.xml",                                                                                         category: "News" },
     { name: "The New York Times",                url: "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",                                                                          category: "News" },
-    { name: "Reuters",                           url: "https://news.google.com/rss/search?q=site%3Areuters.com&hl=en-US&gl=US&ceid=US%3Aen",                                               category: "News" },
+    { name: "Reuters",                           url: "https://news.google.com/rss/search?q=site:reuters.com&hl=en-US&gl=US&ceid=US:en",       category: "News" },
     { name: "The Guardian US",                   url: "https://www.theguardian.com/us-news/rss",                                                                                            category: "News" },
     { name: "NPR",                               url: "https://feeds.npr.org/1001/rss.xml",                                                                                                 category: "News" },
     { name: "Vox",                               url: "https://www.vox.com/rss/index.xml",                                                                                                  category: "News" },
