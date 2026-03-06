@@ -7,7 +7,7 @@
  * Features:
  *  - localStorage caching with configurable TTL (default 15 min)
  *  - Cached geolocation — refresh reuses last-known coords
- *  - Section filter buttons (Hourly, Graphs, Details, Forecast)
+ *  - Section filter buttons (Hourly, Details, Forecast)
  *  - NWS weather advisories
  *  - Card accent color cycling (red → yellow → blue)
  *  - Responsive div-based layout (no tables)
@@ -284,7 +284,7 @@ function renderLocationBar() {
    RENDER — Section Filters
    ============================================================ */
 
-const SECTIONS = ["Hourly", "Graphs", "Details", "Forecast"];
+const SECTIONS = ["Hourly", "Details", "Forecast"];
 
 function renderFilters() {
   const wrap = document.getElementById("filter-buttons");
@@ -753,8 +753,8 @@ function applyFilters() {
     if (alertsData.length > 0) html += buildAlerts(alertsData);
     html += buildHero(weatherData);
   }
-  if (showAll || activeSection === "Hourly") html += buildHourly(weatherData);
-  if (showAll || activeSection === "Graphs") {
+  if (showAll || activeSection === "Hourly") {
+    html += buildHourly(weatherData);
     html += buildSection(icon("chart") + " 24-Hour Trends");
     html += buildGraphs(weatherData);
   }
