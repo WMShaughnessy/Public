@@ -478,7 +478,7 @@ function renderSourcesPanel(statuses) {
   }
 
   const html = Object.keys(groups).sort().map(cat => {
-    const items = groups[cat].map(s => {
+    const items = groups[cat].slice().sort((a, b) => a.name.localeCompare(b.name)).map(s => {
       const isActive   = activeSource === s.name;
 
       // Determine staleness — only for sources that have dated articles
