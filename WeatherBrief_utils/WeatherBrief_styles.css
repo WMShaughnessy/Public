@@ -269,7 +269,6 @@ a:hover { text-decoration: underline; }
   margin-bottom: 4px;
   animation: cardIn 0.2s ease both;
   max-width: 100%;
-  overflow: hidden;
 }
 .wx-card.no-anim {
   animation: none;
@@ -289,6 +288,13 @@ a:hover { text-decoration: underline; }
 .card-accent.blue   { background: var(--blue); }
 
 .card-body {
+  flex: 1;
+  min-width: 0;
+  background: var(--white);
+  border: var(--border);
+  padding: 20px 24px;
+}
+.card-body-scroll {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -471,16 +477,24 @@ a:hover { text-decoration: underline; }
 .fc-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 4px 12px;
+  gap: 6px 12px;
   font-size: 14px;
   color: var(--black);
-  margin-top: 8px;
+  margin-top: 14px;
 }
 .fc-grid-item {
   display: flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fc-grid-item .icon {
+  flex-shrink: 0;
+}
+.fc-grid-item strong {
+  white-space: nowrap;
 }
 .fc-precip-note {
   font-size: 12px;
@@ -662,12 +676,15 @@ a:hover { text-decoration: underline; }
 
   /* Cards */
   .card-body           { padding: 14px 16px; }
+  .card-body-scroll    { padding: 14px 16px; }
   .hero-body           { padding: 18px 16px; }
   .hero-temp           { font-size: 52px; letter-spacing: -2px; }
   .hero-temp-unit      { font-size: 28px; }
 
-  /* Forecast grid */
-  .fc-grid             { grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+  /* Forecast grid — single column on mobile for clean stacking */
+  .fc-grid             { grid-template-columns: 1fr; gap: 4px 0; font-size: 13px; }
+  .fc-header           { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .fc-condition        { font-size: 13px; }
 
   /* Hourly */
   .hourly-item         { min-width: 60px; padding: 10px 5px; }
@@ -696,7 +713,9 @@ a:hover { text-decoration: underline; }
   .refresh-btn         { font-size: 8px; padding: 3px 6px; }
 
   /* Forecast grid */
-  .fc-grid             { grid-template-columns: 1fr; }
+  .fc-grid             { grid-template-columns: 1fr; gap: 4px 0; font-size: 12px; }
+  .fc-grid-item        { gap: 3px; }
+  .fc-precip-note      { font-size: 11px; }
 
   /* Footer */
   .footer-yellow       { width: 20px; }

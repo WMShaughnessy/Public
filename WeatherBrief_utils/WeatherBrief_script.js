@@ -358,7 +358,7 @@ function buildHourly(w) {
   }
   return `<div class="wx-card" style="animation-delay:60ms">
     <div class="card-accent ${color}"></div>
-    <div class="card-body">
+    <div class="card-body-scroll">
       ${buildTag(icon("clock", 14, "#fff") + " Hourly Forecast (Next 24 Hours)")}
       <div class="hourly-scroll">${items}</div>
     </div>
@@ -477,13 +477,9 @@ function buildForecast(w) {
           <div class="fc-grid-item">${icon("therm", 14)} High <strong>${cToF(d.temperature_2m_max[i])}°F</strong></div>
           <div class="fc-grid-item">${icon("therm", 14)} Low <strong>${cToF(d.temperature_2m_min[i])}°F</strong></div>
           <div class="fc-grid-item">${icon("therm", 14)} Feels ${cToF(d.apparent_temperature_max[i])}° / ${cToF(d.apparent_temperature_min[i])}°</div>
-        </div>
-        <div class="fc-grid">
           <div class="fc-grid-item">${icon("rain", 14)} ${mmToIn(d.precipitation_sum[i])}" (${d.precipitation_probability_max[i]}%)</div>
           <div class="fc-grid-item">${icon("wind", 14)} ${kmhToMph(d.wind_speed_10m_max[i])} mph ${degDir(d.wind_direction_10m_dominant[i])}</div>
           <div class="fc-grid-item">${icon("wind", 14)} Gusts ${kmhToMph(d.wind_gusts_10m_max[i])} mph</div>
-        </div>
-        <div class="fc-grid">
           <div class="fc-grid-item">${icon("uv", 14)} UV ${d.uv_index_max[i]} (${uvLabel(d.uv_index_max[i])})</div>
           <div class="fc-grid-item">${icon("sunrise", 14)} ${fmtTime(d.sunrise[i])}</div>
           <div class="fc-grid-item">${icon("sunset", 14)} ${fmtTime(d.sunset[i])}</div>
