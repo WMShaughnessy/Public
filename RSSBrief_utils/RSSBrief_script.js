@@ -368,6 +368,110 @@ function deduplicateArticles(articles) {
   return kept;
 }
 
+/**
+ * Fill the article list with a weighted ratio favoring "News".
+ * Target ratio is 5 News : 2 Other per 7-slot cycle.
+ * The "other" slots round-robin across all non-News categories
+ * so Tech, Business, Gov, Legal each get fair representation.
+ *
+ * Recency boost: articles published within the last 90 minutes are
+ * guaranteed a slot regardless of category, then the weighted cycle
+ * fills remaining slots from older articles.
+ *
+ * After selection, the final list is sorted newest-first for display.
+ */
+function weightedCategoryFill(articles, total) {
+  const NEWS_SLOTS  = 5;
+  const OTHER_SLOTS = 2;
+  const CYCLE       = NEWS_SLOTS + OTHER_SLOTS;
+  const RECENCY_MS  = 90 * 60 * 1000; // 90 minutes
+
+  const now = Date.now();
+
+  // Split into recent (guaranteed) and older (weighted fill)
+  const recent = [];
+  const older  = [];
+  for (const a of articles) {
+    const t = a.pubDate ? new Date(a.pubDate).getTime() : 0;
+    if (t > 0 && (now - t) <= RECENCY_MS && (now - t) >= 0) {
+      recent.push(a);
+    } else {
+      older.push(a);
+    }
+  }
+
+  // Cap recent articles so they don't consume the entire list
+  const recentCap = Math.min(recent.length, Math.floor(total * 0.5));
+  const boosted = recent.slice(0, recentCap);
+  // Any recent articles that didn't fit go back into the older pool
+  const overflow = recent.slice(recentCap);
+  const remaining = overflow.concat(older);
+
+  const slotsLeft = total - boosted.length;
+
+  // Weighted fill from remaining articles
+  const news = remaining.filter(a => a.category === "News");
+
+  const otherByCat = {};
+  for (const a of remaining) {
+    if (a.category === "News") continue;
+    const cat = a.category || "Uncategorized";
+    if (!otherByCat[cat]) otherByCat[cat] = [];
+    otherByCat[cat].push(a);
+  }
+  const otherCats = Object.keys(otherByCat).sort();
+  const otherQueue = [];
+  const catIndexes = {};
+  for (const cat of otherCats) catIndexes[cat] = 0;
+  let exhausted = 0;
+  while (exhausted < otherCats.length) {
+    exhausted = 0;
+    for (const cat of otherCats) {
+      if (catIndexes[cat] < otherByCat[cat].length) {
+        otherQueue.push(otherByCat[cat][catIndexes[cat]++]);
+      } else {
+        exhausted++;
+      }
+    }
+  }
+
+  const weighted = [];
+  let ni = 0;
+  let oi = 0;
+
+  while (weighted.length < slotsLeft) {
+    const posInCycle = weighted.length % CYCLE;
+
+    if (posInCycle < NEWS_SLOTS) {
+      if (ni < news.length) {
+        weighted.push(news[ni++]);
+      } else if (oi < otherQueue.length) {
+        weighted.push(otherQueue[oi++]);
+      } else {
+        break;
+      }
+    } else {
+      if (oi < otherQueue.length) {
+        weighted.push(otherQueue[oi++]);
+      } else if (ni < news.length) {
+        weighted.push(news[ni++]);
+      } else {
+        break;
+      }
+    }
+  }
+
+  // Combine boosted + weighted, then sort newest-first
+  const selected = boosted.concat(weighted);
+  selected.sort((a, b) => {
+    const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
+    const db = b.pubDate ? new Date(b.pubDate).getTime() : 0;
+    return db - da;
+  });
+
+  return selected;
+}
+
 /* ============================================================
    FETCH  —  rss2json → corsproxy fallback
    ============================================================ */
@@ -892,62 +996,88 @@ async function loadAllFeeds(force = false) {
   let done = 0;
   feedStatuses = [];
   rawBySource  = {};
+  let firstRender = false;
+  let renderTimeout = null;
 
-  const results = await Promise.allSettled(
-    sources.map(source =>
-      fetchFeed(source).then(result => {
-        done++;
-        updateProgress(done, sources.length);
+  // Debounced re-render so we don't thrash the DOM on every single feed
+  function scheduleRender(final = false) {
+    if (renderTimeout) clearTimeout(renderTimeout);
+    if (final) {
+      rebuildAndRender();
+    } else {
+      renderTimeout = setTimeout(rebuildAndRender, 200);
+    }
+  }
 
-        // Store raw articles per source (for source-level filtering)
-        rawBySource[source.name] = result.articles;
+  function rebuildAndRender() {
+    // Flatten all collected articles, sort newest-first
+    const allRaw = Object.values(rawBySource).flat()
+      .sort((a, b) => {
+        const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
+        const db = b.pubDate ? new Date(b.pubDate).getTime() : 0;
+        return db - da;
+      });
 
-        feedStatuses.push({
-          name:      source.name,
-          category:  source.category || "Uncategorized",
-          ok:        !result.error,
-          count:     result.articles.length,
-          error:     result.error,
-          fromCache: result.fromCache,
-          latestPubDate: result.articles.reduce((latest, a) => {
-            if (!a.pubDate) return latest;
-            const t = new Date(a.pubDate).getTime();
-            // Ignore future-dated articles for staleness calculation
-            if (t > Date.now()) return latest;
-            return (t > latest) ? t : latest;
-          }, 0) || null,
-        });
-        return result.articles;
-      })
-    )
-  );
-
-  // Flatten, sort newest-first
-  const rawArticles = results
-    .flatMap(r => r.status === "fulfilled" ? r.value : [])
-    .sort((a, b) => {
-      const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
-      const db = b.pubDate ? new Date(b.pubDate).getTime() : 0;
-      return db - da;
+    // Per-source cap
+    const sourceCounts = {};
+    const limited = allRaw.filter(a => {
+      sourceCounts[a.source] = (sourceCounts[a.source] || 0) + 1;
+      return sourceCounts[a.source] <= CFG.maxPerSource;
     });
 
-  // Per-source cap (for main feed only)
-  const sourceCounts = {};
-  const limited = rawArticles.filter(a => {
-    sourceCounts[a.source] = (sourceCounts[a.source] || 0) + 1;
-    return sourceCounts[a.source] <= CFG.maxPerSource;
-  });
+    // Deduplicate + weighted fill
+    const deduped = deduplicateArticles(limited);
+    allArticles = weightedCategoryFill(deduped, CFG.totalArticles);
 
-  // Deduplicate + total cap
-  allArticles = deduplicateArticles(limited).slice(0, CFG.totalArticles);
+    renderCategoryFilters(allArticles);
+    applyFilters();
+    renderSourcesPanel(feedStatuses);
+  }
+
+  // Threshold: render after this many feeds are done, then let the rest finish in background
+  const EARLY_RENDER_THRESHOLD = Math.ceil(sources.length * 0.45);
+
+  const promises = sources.map(source =>
+    fetchFeed(source).then(result => {
+      done++;
+      updateProgress(done, sources.length);
+
+      rawBySource[source.name] = result.articles;
+
+      feedStatuses.push({
+        name:      source.name,
+        category:  source.category || "Uncategorized",
+        ok:        !result.error,
+        count:     result.articles.length,
+        error:     result.error,
+        fromCache: result.fromCache,
+        latestPubDate: result.articles.reduce((latest, a) => {
+          if (!a.pubDate) return latest;
+          const t = new Date(a.pubDate).getTime();
+          if (t > Date.now()) return latest;
+          return (t > latest) ? t : latest;
+        }, 0) || null,
+      });
+
+      // First render once we have enough feeds to show a meaningful page
+      if (!firstRender && done >= EARLY_RENDER_THRESHOLD) {
+        firstRender = true;
+        rebuildAndRender();
+      } else if (firstRender) {
+        // Subsequent feeds trickle in — debounced re-render
+        scheduleRender();
+      }
+
+      return result.articles;
+    })
+  );
+
+  await Promise.allSettled(promises);
+
+  // Final render with all data
+  scheduleRender(true);
 
   writeMeta({ feedCount: sources.length });
-
-  const allFromCache = feedStatuses.length > 0 && feedStatuses.every(s => s.fromCache);
-
-  renderCategoryFilters(allArticles);
-  applyFilters();
-  renderSourcesPanel(feedStatuses);
 
   isLoading = false;
   if (refreshBtn) refreshBtn.disabled = false;
