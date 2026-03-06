@@ -25,7 +25,9 @@ const DEFAULT_CONFIG = {
   totalArticles: 30,
   maxPerSource: 5,
   cacheTTLMinutes: 15,
-  dedupThreshold: 0.72,
+  dedupThreshold: 0.55,
+  freshHours: 6,
+  extendedHours: 14,
   rss2jsonApiKey: null,
   sources: [],
 };
@@ -423,23 +425,24 @@ function isTechSpam(article) {
 
 /**
  * Fill the article list with a weighted ratio favoring "News".
- * Cycle: 8 News, 1 Business, 1 Gov/Legal, 1 Tech per 11 slots.
+ * Cycle: 6 News, 2 Business, 2 Gov/Legal, 1 Tech per 11 slots.
  * Tech articles are pre-filtered to remove deal/ad spam.
  *
- * Strict recency: only articles ≤2 hours old are used. If that doesn't
- * fill the requested total, articles up to 4 hours old are added to
- * fill the gap. Articles older than 4 hours are never shown.
+ * Recency windows are configurable via BRIEF_CONFIG:
+ *   freshHours    — primary pool (default 6)
+ *   extendedHours — backfill pool (default 14)
+ * Articles older than extendedHours are never shown.
  *
  * After selection, the final list is sorted newest-first for display.
  */
 function weightedCategoryFill(articles, total) {
-  const NEWS_SLOTS   = 8;
-  const BIZ_SLOTS    = 1;
-  const GOVLEG_SLOTS = 1;
+  const NEWS_SLOTS   = 6;
+  const BIZ_SLOTS    = 2;
+  const GOVLEG_SLOTS = 2;
   const TECH_SLOTS   = 1;
   const CYCLE        = NEWS_SLOTS + BIZ_SLOTS + GOVLEG_SLOTS + TECH_SLOTS; // 11
-  const FRESH_MS    = 6  * 60 * 60 * 1000;   // 6 hours
-  const EXTENDED_MS = 14 * 60 * 60 * 1000;   // 14 hours
+  const FRESH_MS    = (CFG.freshHours    || 6)  * 60 * 60 * 1000;
+  const EXTENDED_MS = (CFG.extendedHours || 14) * 60 * 60 * 1000;
 
   const now = Date.now();
 

@@ -246,6 +246,14 @@ a:hover { text-decoration: underline; }
 }
 .refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ---------- Last Updated ---------- */
+.last-updated {
+  font-size: 10px;
+  color: var(--grey);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
 /* ---------- Section Divider ---------- */
 .section-divider {
   border-bottom: 2px solid var(--black);
@@ -456,6 +464,100 @@ a:hover { text-decoration: underline; }
   color: var(--grey);
 }
 
+/* ---------- Charts ---------- */
+.chart-wrap {
+  position: relative;
+  margin-top: 8px;
+  touch-action: none; /* prevent scroll while dragging on chart */
+}
+.wx-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.chart-stack {
+  position: relative;
+}
+.chart-stack .wx-chart:first-child {
+  position: relative;
+}
+.chart-stack .wx-chart:nth-child(2) {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+}
+.chart-crosshair {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  background: var(--black);
+  opacity: 0.4;
+  pointer-events: none;
+  display: none;
+  z-index: 2;
+}
+.chart-tooltip {
+  position: absolute;
+  top: -4px;
+  transform: translateX(-50%);
+  background: var(--black);
+  color: var(--white);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  padding: 5px 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  display: none;
+  z-index: 3;
+  line-height: 1.4;
+}
+.chart-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: var(--black);
+}
+.chart-dot-active {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--white);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  display: none;
+  z-index: 2;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.15);
+}
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  padding-top: 10px;
+  flex-wrap: wrap;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--grey);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.legend-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 3px;
+  border-radius: 1px;
+}
+
 /* ---------- Forecast Day Card ---------- */
 .fc-header {
   display: flex;
@@ -477,10 +579,23 @@ a:hover { text-decoration: underline; }
 .fc-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 6px 12px;
+  gap: 2px 12px;
   font-size: 14px;
   color: var(--black);
   margin-top: 14px;
+}
+/* Subtle separator between each row of 3 items */
+.fc-grid-item:nth-child(n+4) {
+  padding-top: 4px;
+}
+.fc-grid-item:nth-child(3n+4) {
+  border-top: 1px solid #e8e8e8;
+}
+.fc-grid-item:nth-child(3n+5) {
+  border-top: 1px solid #e8e8e8;
+}
+.fc-grid-item:nth-child(3n+6) {
+  border-top: 1px solid #e8e8e8;
 }
 .fc-grid-item {
   display: flex;
@@ -683,6 +798,13 @@ a:hover { text-decoration: underline; }
 
   /* Forecast grid — single column on mobile for clean stacking */
   .fc-grid             { grid-template-columns: 1fr; gap: 4px 0; font-size: 13px; }
+  .fc-grid-item:nth-child(n+4) { padding-top: 4px; }
+  .fc-grid-item:nth-child(3n+4),
+  .fc-grid-item:nth-child(3n+5),
+  .fc-grid-item:nth-child(3n+6) { border-top: none; }
+  /* Separator every 3rd item in single column */
+  .fc-grid-item:nth-child(4),
+  .fc-grid-item:nth-child(7) { border-top: 1px solid #e8e8e8; }
   .fc-header           { flex-direction: column; align-items: flex-start; gap: 6px; }
   .fc-condition        { font-size: 13px; }
 
