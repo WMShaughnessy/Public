@@ -432,7 +432,6 @@ a:hover { text-decoration: underline; }
 }
 .footer-yellow {
   width: 50px;
-  height: 50px;
   background: var(--yellow);
   border: var(--border-thick);
   flex-shrink: 0;
@@ -468,31 +467,61 @@ a:hover { text-decoration: underline; }
 }
 
 /* ---------- Responsive ---------- */
+
+/* ---- Tablet / large phone ---- */
 @media (max-width: 600px) {
   .page-wrap { padding: 12px 10px; }
-  .header-accent-left  { width: 50px; min-height: 70px; }
-  .header-accent-right { width: 24px; }
-  .header-title        { font-size: 22px; letter-spacing: -0.5px; }
-  .header-body         { padding: 12px 14px; }
+
+  /* Header — scale to ~60% of desktop */
+  .header-accent-left  { width: 84px; min-height: 80px; }
+  .header-accent-right { width: 36px; }
+  .header-body         { padding: 14px 18px; }
+  .header-title        { font-size: 26px; letter-spacing: -0.5px; }
   .header-date         { font-size: 10px; }
   .header-time         { font-size: 10px; }
-  .card-body           { padding: 12px 14px; }
-  .card-title          { font-size: 15px; }
-  .card-preview        { font-size: 13px; }
-  .card-meta           { gap: 5px; margin-bottom: 10px; }
-  .stats-accent        { display: none; }
-  .stats-count         { min-width: 120px; font-size: 12px; padding: 10px 12px; gap: 6px; }
+
+  /* Stats bar */
+  .stats-accent        { width: 24px; }
+  .stats-count         { min-width: 130px; font-size: 12px; padding: 10px 14px; gap: 6px; }
   .stats-label         { padding: 8px 10px; font-size: 11px; }
-  .sources-detail      { column-count: 1; }
-  .footer-yellow       { width: 30px; height: 36px; }
-  .footer-red          { width: 30px; }
-  .footer-blue         { width: 16px; }
   .filter-btn          { font-size: 9px; padding: 4px 7px; }
   .refresh-btn         { font-size: 11px; margin-left: 6px; }
+
+  /* Sources */
+  .sources-detail      { column-count: 1; }
+
+  /* Cards */
+  .card-body           { padding: 14px 16px; }
+  .card-title          { font-size: 16px; }
+  .card-preview        { font-size: 13px; }
+  .card-meta           { gap: 5px; margin-bottom: 10px; }
   .card-read           { font-size: 11px; padding: 6px 12px; }
+
+  /* Footer — scale to ~60% of desktop */
+  .footer-yellow       { width: 30px; }
+  .footer-red          { width: 30px; }
+  .footer-blue         { width: 18px; }
+  .footer-body         { padding: 10px 14px; }
 }
+
+/* ---- Small phone ---- */
 @media (max-width: 380px) {
-  .header-accent-left  { display: none; }
-  .header-body         { border-left: none; }
+  /* Header — scale to ~40% of desktop, never hidden */
+  .header-accent-left  { width: 50px; min-height: 60px; }
+  .header-accent-right { width: 20px; }
+  .header-body         { padding: 10px 12px; }
   .header-title        { font-size: 20px; }
+  .header-date         { font-size: 9px; letter-spacing: 1px; }
+  .header-time         { font-size: 9px; letter-spacing: 1px; }
+
+  /* Stats bar */
+  .stats-accent        { width: 16px; }
+  .stats-count         { min-width: 110px; font-size: 11px; padding: 8px 10px; }
+
+  /* Footer — scale to ~30% of desktop */
+  .footer-yellow       { width: 20px; }
+  .footer-red          { width: 20px; }
+  .footer-blue         { width: 12px; }
+  .footer-body         { padding: 8px 10px; }
+  .footer-text         { font-size: 9px; }
 }

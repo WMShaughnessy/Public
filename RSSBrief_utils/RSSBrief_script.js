@@ -492,8 +492,8 @@ function buildArticleCard(article, colorIndex) {
   <div class="card-body">
     <div class="card-meta">
       <span class="card-source">${escHtml(article.source)}</span>
-      ${timeStr ? `<span class="card-time">${escHtml(timeStr)}</span>` : ""}
       ${article.category ? `<span class="card-category ${catCls}">${escHtml(article.category)}</span>` : ""}
+      ${timeStr ? `<span class="card-time">${escHtml(timeStr)}</span>` : ""}
     </div>
     <div class="card-title">
       <a href="${escHtml(article.link)}" target="_blank" rel="noopener noreferrer">
