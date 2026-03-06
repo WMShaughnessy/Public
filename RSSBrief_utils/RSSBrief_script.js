@@ -48,6 +48,7 @@ let activeSource     = null; // source name string or null
 let isLoading        = false;
 let feedStatuses     = [];   // [{ name, category, ok, count, error, fromCache }]
 let sourcesOpen      = false;
+let hasAnimated      = false; // true after first card render — skip animation on updates
 
 /* ============================================================
    HELPERS
@@ -369,10 +370,42 @@ function deduplicateArticles(articles) {
 }
 
 /**
+ * Filter out promotional / ad-like Tech articles.
+ * Checks title and description for deal/savings/ad patterns.
+ */
+const TECH_SPAM_PATTERNS = [
+  /\bdeal(?:s)?\b/i,
+  /\bsaving(?:s)?\b/i,
+  /\bsale\b/i,
+  /\bdiscount(?:s|ed)?\b/i,
+  /\bcoupon(?:s)?\b/i,
+  /\bpromo(?:tion|s|tional)?\b/i,
+  /\bcheap(?:est|er)?\b/i,
+  /\bbargain(?:s)?\b/i,
+  /\b(?:flash|clearance)\s*sale/i,
+  /\bprice\s*(?:drop|cut|slash)/i,
+  /\b\d+\s*%\s*off\b/i,
+  /\bunder\s*\$\d+/i,
+  /\bfor\s*(?:just|only)\s*\$/i,
+  /\blowest\s*price/i,
+  /\bbuy\s*one\s*get/i,
+  /\bbest\s*(?:buy|price|deal)/i,
+  /\bsave\s*\$\d+/i,
+  /\baffordable\b/i,
+  /\bbudget\b/i,
+  /\bgift\s*(?:guide|idea|pick)/i,
+  /\bsponsored\b/i,
+];
+
+function isTechSpam(article) {
+  const text = ((article.title || "") + " " + (article.description || "")).toLowerCase();
+  return TECH_SPAM_PATTERNS.some(rx => rx.test(text));
+}
+
+/**
  * Fill the article list with a weighted ratio favoring "News".
- * Target ratio is 5 News : 2 Other per 7-slot cycle.
- * The "other" slots round-robin across all non-News categories
- * so Tech, Business, Gov, Legal each get fair representation.
+ * Cycle: 6 News, 3 Other (Business/Gov/Legal), 1 Tech per 10 slots.
+ * Tech articles are pre-filtered to remove deal/ad spam.
  *
  * Recency boost: articles published within the last 90 minutes are
  * guaranteed a slot regardless of category, then the weighted cycle
@@ -381,17 +414,20 @@ function deduplicateArticles(articles) {
  * After selection, the final list is sorted newest-first for display.
  */
 function weightedCategoryFill(articles, total) {
-  const NEWS_SLOTS  = 5;
-  const OTHER_SLOTS = 2;
-  const CYCLE       = NEWS_SLOTS + OTHER_SLOTS;
+  const NEWS_SLOTS  = 6;
+  const MID_SLOTS   = 3;  // Business, Gov, Legal
+  const TECH_SLOTS  = 1;
+  const CYCLE       = NEWS_SLOTS + MID_SLOTS + TECH_SLOTS; // 10
   const RECENCY_MS  = 90 * 60 * 1000; // 90 minutes
 
   const now = Date.now();
 
   // Split into recent (guaranteed) and older (weighted fill)
+  // Tech spam is excluded from both pools
   const recent = [];
   const older  = [];
   for (const a of articles) {
+    if (a.category === "Tech" && isTechSpam(a)) continue;
     const t = a.pubDate ? new Date(a.pubDate).getTime() : 0;
     if (t > 0 && (now - t) <= RECENCY_MS && (now - t) >= 0) {
       recent.push(a);
@@ -409,56 +445,66 @@ function weightedCategoryFill(articles, total) {
 
   const slotsLeft = total - boosted.length;
 
-  // Weighted fill from remaining articles
+  // Weighted fill: News (6 slots) > Other (3 slots) > Tech (1 slot) per 10-slot cycle
   const news = remaining.filter(a => a.category === "News");
+  const tech = remaining.filter(a => a.category === "Tech" && !isTechSpam(a));
 
-  const otherByCat = {};
+  // Round-robin queue for non-News, non-Tech categories
+  const midByCat = {};
   for (const a of remaining) {
-    if (a.category === "News") continue;
+    if (a.category === "News" || a.category === "Tech") continue;
     const cat = a.category || "Uncategorized";
-    if (!otherByCat[cat]) otherByCat[cat] = [];
-    otherByCat[cat].push(a);
+    if (!midByCat[cat]) midByCat[cat] = [];
+    midByCat[cat].push(a);
   }
-  const otherCats = Object.keys(otherByCat).sort();
-  const otherQueue = [];
-  const catIndexes = {};
-  for (const cat of otherCats) catIndexes[cat] = 0;
-  let exhausted = 0;
-  while (exhausted < otherCats.length) {
-    exhausted = 0;
-    for (const cat of otherCats) {
-      if (catIndexes[cat] < otherByCat[cat].length) {
-        otherQueue.push(otherByCat[cat][catIndexes[cat]++]);
+  const midCats = Object.keys(midByCat).sort();
+  const midQueue = [];
+  const midIdx = {};
+  for (const cat of midCats) midIdx[cat] = 0;
+  let midExhausted = 0;
+  while (midExhausted < midCats.length) {
+    midExhausted = 0;
+    for (const cat of midCats) {
+      if (midIdx[cat] < midByCat[cat].length) {
+        midQueue.push(midByCat[cat][midIdx[cat]++]);
       } else {
-        exhausted++;
+        midExhausted++;
       }
     }
   }
 
   const weighted = [];
-  let ni = 0;
-  let oi = 0;
+  let ni = 0; // news index
+  let mi = 0; // mid (other non-tech) index
+  let ti = 0; // tech index
+
+  // Cycle: 6 News, 3 Other, 1 Tech
+  const NEWS_END  = NEWS_SLOTS;                // 0-5 = news
+  const MID_END   = NEWS_SLOTS + MID_SLOTS;    // 6-8 = other
+  // pos 9 = tech
 
   while (weighted.length < slotsLeft) {
-    const posInCycle = weighted.length % CYCLE;
+    const pos = weighted.length % CYCLE;
+    let pushed = false;
 
-    if (posInCycle < NEWS_SLOTS) {
-      if (ni < news.length) {
-        weighted.push(news[ni++]);
-      } else if (oi < otherQueue.length) {
-        weighted.push(otherQueue[oi++]);
-      } else {
-        break;
-      }
+    if (pos < NEWS_END) {
+      // News slot — fallback to mid, then tech
+      if (ni < news.length)          { weighted.push(news[ni++]); pushed = true; }
+      else if (mi < midQueue.length) { weighted.push(midQueue[mi++]); pushed = true; }
+      else if (ti < tech.length)     { weighted.push(tech[ti++]); pushed = true; }
+    } else if (pos < MID_END) {
+      // Other slot — fallback to tech, then news
+      if (mi < midQueue.length)      { weighted.push(midQueue[mi++]); pushed = true; }
+      else if (ti < tech.length)     { weighted.push(tech[ti++]); pushed = true; }
+      else if (ni < news.length)     { weighted.push(news[ni++]); pushed = true; }
     } else {
-      if (oi < otherQueue.length) {
-        weighted.push(otherQueue[oi++]);
-      } else if (ni < news.length) {
-        weighted.push(news[ni++]);
-      } else {
-        break;
-      }
+      // Tech slot — fallback to mid, then news
+      if (ti < tech.length)          { weighted.push(tech[ti++]); pushed = true; }
+      else if (mi < midQueue.length) { weighted.push(midQueue[mi++]); pushed = true; }
+      else if (ni < news.length)     { weighted.push(news[ni++]); pushed = true; }
     }
+
+    if (!pushed) break;
   }
 
   // Combine boosted + weighted, then sort newest-first
@@ -831,8 +877,11 @@ function buildArticleCard(article, colorIndex) {
     }
   }
 
+  const animStyle = hasAnimated ? "" : `animation-delay:${(colorIndex % 20) * 30}ms`;
+  const animClass = hasAnimated ? "article-card no-anim" : "article-card";
+
   return `
-<div class="article-card" style="animation-delay:${(colorIndex % 20) * 30}ms">
+<div class="${animClass}" style="${animStyle}">
   <div class="card-accent ${escHtml(color)}"></div>
   <div class="card-body">
     ${timeStr ? `<div class="card-time">${escHtml(timeStr)}</div>` : ""}
@@ -930,6 +979,7 @@ function applyFilters() {
   }
 
   wrapper.innerHTML = filtered.map((a, i) => buildArticleCard(a, i)).join("\n");
+  if (!hasAnimated) hasAnimated = true;
   renderStatsBar(filtered.length);
 }
 
@@ -983,6 +1033,7 @@ async function loadAllFeeds(force = false) {
     });
   }
 
+  hasAnimated = false;
   showLoadingState();
 
   const sources = CFG.sources;
@@ -996,88 +1047,59 @@ async function loadAllFeeds(force = false) {
   let done = 0;
   feedStatuses = [];
   rawBySource  = {};
-  let firstRender = false;
-  let renderTimeout = null;
 
-  // Debounced re-render so we don't thrash the DOM on every single feed
-  function scheduleRender(final = false) {
-    if (renderTimeout) clearTimeout(renderTimeout);
-    if (final) {
-      rebuildAndRender();
-    } else {
-      renderTimeout = setTimeout(rebuildAndRender, 200);
-    }
-  }
+  const results = await Promise.allSettled(
+    sources.map(source =>
+      fetchFeed(source).then(result => {
+        done++;
+        updateProgress(done, sources.length);
 
-  function rebuildAndRender() {
-    // Flatten all collected articles, sort newest-first
-    const allRaw = Object.values(rawBySource).flat()
-      .sort((a, b) => {
-        const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
-        const db = b.pubDate ? new Date(b.pubDate).getTime() : 0;
-        return db - da;
-      });
+        rawBySource[source.name] = result.articles;
 
-    // Per-source cap
-    const sourceCounts = {};
-    const limited = allRaw.filter(a => {
-      sourceCounts[a.source] = (sourceCounts[a.source] || 0) + 1;
-      return sourceCounts[a.source] <= CFG.maxPerSource;
-    });
-
-    // Deduplicate + weighted fill
-    const deduped = deduplicateArticles(limited);
-    allArticles = weightedCategoryFill(deduped, CFG.totalArticles);
-
-    renderCategoryFilters(allArticles);
-    applyFilters();
-    renderSourcesPanel(feedStatuses);
-  }
-
-  // Threshold: render after this many feeds are done, then let the rest finish in background
-  const EARLY_RENDER_THRESHOLD = Math.ceil(sources.length * 0.45);
-
-  const promises = sources.map(source =>
-    fetchFeed(source).then(result => {
-      done++;
-      updateProgress(done, sources.length);
-
-      rawBySource[source.name] = result.articles;
-
-      feedStatuses.push({
-        name:      source.name,
-        category:  source.category || "Uncategorized",
-        ok:        !result.error,
-        count:     result.articles.length,
-        error:     result.error,
-        fromCache: result.fromCache,
-        latestPubDate: result.articles.reduce((latest, a) => {
-          if (!a.pubDate) return latest;
-          const t = new Date(a.pubDate).getTime();
-          if (t > Date.now()) return latest;
-          return (t > latest) ? t : latest;
-        }, 0) || null,
-      });
-
-      // First render once we have enough feeds to show a meaningful page
-      if (!firstRender && done >= EARLY_RENDER_THRESHOLD) {
-        firstRender = true;
-        rebuildAndRender();
-      } else if (firstRender) {
-        // Subsequent feeds trickle in — debounced re-render
-        scheduleRender();
-      }
-
-      return result.articles;
-    })
+        feedStatuses.push({
+          name:      source.name,
+          category:  source.category || "Uncategorized",
+          ok:        !result.error,
+          count:     result.articles.length,
+          error:     result.error,
+          fromCache: result.fromCache,
+          latestPubDate: result.articles.reduce((latest, a) => {
+            if (!a.pubDate) return latest;
+            const t = new Date(a.pubDate).getTime();
+            if (t > Date.now()) return latest;
+            return (t > latest) ? t : latest;
+          }, 0) || null,
+        });
+        return result.articles;
+      })
+    )
   );
 
-  await Promise.allSettled(promises);
+  // Flatten, sort newest-first
+  const rawArticles = results
+    .flatMap(r => r.status === "fulfilled" ? r.value : [])
+    .sort((a, b) => {
+      const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
+      const db = b.pubDate ? new Date(b.pubDate).getTime() : 0;
+      return db - da;
+    });
 
-  // Final render with all data
-  scheduleRender(true);
+  // Per-source cap
+  const sourceCounts = {};
+  const limited = rawArticles.filter(a => {
+    sourceCounts[a.source] = (sourceCounts[a.source] || 0) + 1;
+    return sourceCounts[a.source] <= CFG.maxPerSource;
+  });
+
+  // Deduplicate + weighted fill
+  const deduped = deduplicateArticles(limited);
+  allArticles = weightedCategoryFill(deduped, CFG.totalArticles);
 
   writeMeta({ feedCount: sources.length });
+
+  renderCategoryFilters(allArticles);
+  applyFilters();
+  renderSourcesPanel(feedStatuses);
 
   isLoading = false;
   if (refreshBtn) refreshBtn.disabled = false;

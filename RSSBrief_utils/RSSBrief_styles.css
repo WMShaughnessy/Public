@@ -289,6 +289,9 @@ a:hover { text-decoration: underline; }
   margin-bottom: 4px;
   animation: cardIn 0.2s ease both;
 }
+.article-card.no-anim {
+  animation: none;
+}
 @keyframes cardIn {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
