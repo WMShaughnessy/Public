@@ -690,7 +690,7 @@ function renderHeader() {
   const timeStr = now.toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit" });
 
   const titleEl = document.getElementById("header-title");
-  if (titleEl) titleEl.textContent = CFG.title;
+  if (titleEl) titleEl.innerHTML = '<a href="index.html" style="color:inherit;text-decoration:none;">' + CFG.title + '</a>';
   document.title = CFG.title;
 
   const dateEl = document.getElementById("header-date");

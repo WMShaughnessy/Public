@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Home</title>
+  <style>
+    /* ---------- Tokens ---------- */
+    :root {
+      --red:    rgb(217, 33, 33);
+      --blue:   rgb(27, 75, 154);
+      --yellow: rgb(247, 213, 0);
+      --black:  #1A1A1A;
+      --white:  #FFFFFF;
+      --grey:   #666666;
+      --light:  #444444;
+      --border: 3px solid #1A1A1A;
+      --border-thick: 4px solid #1A1A1A;
+      --font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      --max-w: 660px;
+    }
+
+    /* ---------- Reset & Base ---------- */
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--white);
+      color: var(--black);
+      font-family: var(--font);
+      -webkit-text-size-adjust: 100%;
+    }
+    a { color: inherit; text-decoration: none; }
+
+    /* ---------- Layout ---------- */
+    .page-wrap {
+      width: 100%;
+      padding: 30px 15px;
+      background: var(--white);
+    }
+    .main-container {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* ---------- Header ---------- */
+    .header-row {
+      display: flex;
+      align-items: stretch;
+      border: var(--border-thick);
+      margin-bottom: -4px;
+      position: relative;
+      z-index: 1;
+    }
+    .header-accent-left {
+      width: 140px;
+      flex-shrink: 0;
+      background: var(--red);
+    }
+    .header-body {
+      flex: 1;
+      padding: 20px 30px;
+      border-left: var(--border-thick);
+      background: var(--white);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .header-title {
+      font-size: 36px;
+      font-weight: bold;
+      letter-spacing: -1px;
+      line-height: 1;
+      color: var(--black);
+      margin-bottom: 8px;
+    }
+    .header-date {
+      font-size: 12px;
+      color: var(--grey);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 1px;
+    }
+    .header-time {
+      font-size: 12px;
+      color: var(--grey);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    .header-accent-right {
+      width: 60px;
+      flex-shrink: 0;
+      background: var(--yellow);
+      border-left: var(--border-thick);
+    }
+
+    /* ---------- Stats Bar ---------- */
+    .stats-bar {
+      display: flex;
+      margin-bottom: 4px;
+    }
+    .stats-accent-blue {
+      width: 60px;
+      flex-shrink: 0;
+      background: var(--blue);
+      border: var(--border-thick);
+    }
+    .stats-body {
+      flex: 1;
+      background: var(--white);
+      border: var(--border-thick);
+      border-left: none;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .nav-link {
+      font-family: var(--font);
+      font-size: 10px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      padding: 4px 9px;
+      border: 2px solid var(--black);
+      background: var(--white);
+      color: var(--black);
+      cursor: pointer;
+      transition: background 0.1s, color 0.1s;
+      line-height: 1.4;
+      flex-shrink: 0;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .nav-link:hover {
+      background: var(--black);
+      color: var(--white);
+      text-decoration: none;
+    }
+    .stats-accent-black {
+      width: 40px;
+      flex-shrink: 0;
+      background: var(--black);
+      border: var(--border-thick);
+      border-left: none;
+    }
+
+    /* ---------- Site Cards ---------- */
+    .cards-area {
+      margin-top: 4px;
+    }
+
+    .site-card {
+      display: flex;
+      margin-bottom: 4px;
+      cursor: pointer;
+      animation: cardIn 0.3s ease both;
+    }
+    .site-card:nth-child(1) { animation-delay: 0.05s; }
+    .site-card:nth-child(2) { animation-delay: 0.12s; }
+    .site-card:nth-child(3) { animation-delay: 0.19s; }
+
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .card-accent {
+      width: 8px;
+      flex-shrink: 0;
+      border: var(--border);
+      border-right: none;
+      transition: width 0.15s ease;
+    }
+    .site-card:hover .card-accent {
+      width: 16px;
+    }
+    .card-accent.red    { background: var(--red); }
+    .card-accent.yellow { background: var(--yellow); }
+    .card-accent.blue   { background: var(--blue); }
+
+    .card-body {
+      flex: 1;
+      background: var(--white);
+      border: var(--border);
+      padding: 28px 30px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      transition: background 0.12s ease;
+    }
+    .site-card:hover .card-body {
+      background: #fafafa;
+    }
+    .site-card.disabled .card-body {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .site-card.disabled {
+      cursor: not-allowed;
+    }
+
+    .card-icon {
+      width: 54px;
+      height: 54px;
+      flex-shrink: 0;
+      border: var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: bold;
+      background: var(--black);
+      color: var(--white);
+      letter-spacing: -0.5px;
+    }
+    .card-icon.red-bg    { background: var(--red); }
+    .card-icon.yellow-bg { background: var(--yellow); color: var(--black); }
+    .card-icon.blue-bg   { background: var(--blue); }
+
+    .card-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .card-name {
+      font-size: 36px;
+      font-weight: bold;
+      letter-spacing: -1px;
+      line-height: 1;
+    }
+
+    /* ---------- Footer ---------- */
+    .footer-row {
+      display: flex;
+      margin-top: 20px;
+    }
+    .footer-yellow {
+      width: 50px;
+      background: var(--yellow);
+      border: var(--border-thick);
+      flex-shrink: 0;
+    }
+    .footer-body {
+      flex: 1;
+      background: var(--white);
+      border: var(--border-thick);
+      border-left: none;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+    }
+    .footer-text {
+      font-size: 11px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .footer-red {
+      width: 50px;
+      background: var(--red);
+      border: var(--border-thick);
+      border-left: none;
+      flex-shrink: 0;
+    }
+    .footer-blue {
+      width: 30px;
+      background: var(--blue);
+      border: var(--border-thick);
+      border-left: none;
+      flex-shrink: 0;
+    }
+
+    /* ---------- Responsive ---------- */
+    @media (max-width: 600px) {
+      .page-wrap { padding: 12px 10px; }
+      .header-accent-left  { width: 84px; }
+      .header-accent-right { width: 36px; }
+      .header-body         { padding: 14px 18px; }
+      .header-title        { font-size: 30px; }
+      .header-date         { font-size: 10px; }
+      .header-time         { font-size: 10px; }
+
+      .card-body           { padding: 18px 16px; gap: 14px; }
+      .card-icon           { width: 42px; height: 42px; font-size: 16px; }
+      .card-name           { font-size: 26px; }
+      .nav-link            { font-size: 9px; padding: 4px 7px; }
+
+      .footer-yellow       { width: 30px; }
+      .footer-red          { width: 30px; }
+      .footer-blue         { width: 18px; }
+      .footer-body         { padding: 10px 14px; }
+    }
+
+    @media (max-width: 380px) {
+      .header-accent-left  { width: 50px; }
+      .header-accent-right { width: 20px; }
+      .header-body         { padding: 10px 12px; }
+      .header-title        { font-size: 24px; }
+
+      .card-body           { padding: 14px 12px; gap: 10px; flex-wrap: wrap; }
+      .card-icon           { width: 36px; height: 36px; font-size: 14px; }
+      .card-name           { font-size: 20px; }
+      .nav-link            { font-size: 8px; padding: 3px 6px; }
+
+      .footer-yellow       { width: 20px; }
+      .footer-red          { width: 20px; }
+      .footer-blue         { width: 12px; }
+      .footer-text         { font-size: 9px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="page-wrap">
+  <div class="main-container">
+
+    <!-- ============ HEADER ============ -->
+    <div class="header-row">
+      <div class="header-accent-left"></div>
+      <div class="header-body">
+        <div class="header-title"><a href="index.html" style="color:inherit;text-decoration:none;">Home</a></div>
+        <div class="header-date" id="header-date"></div>
+        <div class="header-time" id="header-time"></div>
+      </div>
+      <div class="header-accent-right"></div>
+    </div>
+
+    <!-- ============ STATS BAR ============ -->
+    <div class="stats-bar">
+      <div class="stats-accent-blue"></div>
+      <div class="stats-body">
+        <a href="About.html" class="nav-link">About</a>
+        <a href="BusinessCard.html" class="nav-link">Business Card</a>
+      </div>
+      <div class="stats-accent-black"></div>
+    </div>
+
+    <!-- ============ SITE CARDS ============ -->
+    <div class="cards-area">
+
+      <!-- RSS Brief -->
+      <a href="RSSBrief.html" class="site-card" style="text-decoration:none;">
+        <div class="card-accent red"></div>
+        <div class="card-body">
+          <div class="card-icon red-bg">RSS</div>
+          <div class="card-info">
+            <div class="card-name">RSS Brief</div>
+          </div>
+        </div>
+      </a>
+
+      <!-- Weather Brief -->
+      <a href="WeatherBrief.html" class="site-card" style="text-decoration:none;">
+        <div class="card-accent yellow"></div>
+        <div class="card-body">
+          <div class="card-icon yellow-bg">WB</div>
+          <div class="card-info">
+            <div class="card-name">Weather Brief</div>
+          </div>
+        </div>
+      </a>
+
+      <!-- Gallery -->
+      <a href="Gallery.html" class="site-card" style="text-decoration:none;">
+        <div class="card-accent blue"></div>
+        <div class="card-body">
+          <div class="card-icon blue-bg">GL</div>
+          <div class="card-info">
+            <div class="card-name">Gallery</div>
+          </div>
+        </div>
+      </a>
+
+    </div>
+
+    <!-- ============ FOOTER ============ -->
+    <div class="footer-row">
+      <div class="footer-yellow"></div>
+      <div class="footer-body">
+        <span class="footer-text"><a href="#" style="color:inherit;text-decoration:none;">Home</a> · Personal Use Only</span>
+      </div>
+      <div class="footer-red"></div>
+      <div class="footer-blue"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // Date & time display
+  const now = new Date();
+  const dateOpts = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  document.getElementById('header-date').textContent = now.toLocaleDateString('en-US', dateOpts).toUpperCase();
+  const timeOpts = { hour: 'numeric', minute: '2-digit', hour12: true };
+  document.getElementById('header-time').textContent = now.toLocaleTimeString('en-US', timeOpts).toUpperCase();
+</script>
+</body>
+</html>

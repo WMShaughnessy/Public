@@ -260,7 +260,7 @@ function renderHeader() {
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const timeStr = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  document.getElementById("header-title").textContent = CFG.title;
+  document.getElementById("header-title").innerHTML = '<a href="index.html" style="color:inherit;text-decoration:none;">' + CFG.title + '</a>';
   document.title = CFG.title;
   document.getElementById("header-date").textContent = dateStr.toUpperCase();
   document.getElementById("header-time").textContent = timeStr;
