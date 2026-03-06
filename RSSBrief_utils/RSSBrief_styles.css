@@ -48,12 +48,14 @@ a:hover { text-decoration: underline; }
 /* ---------- Header ---------- */
 .header-row {
   display: flex;
+  align-items: stretch;
   border: var(--border-thick);
-  margin-bottom: 0;
+  margin-bottom: -4px; /* overlap with stats-bar top border to prevent seam */
+  position: relative;
+  z-index: 1;
 }
 .header-accent-left {
   width: 140px;
-  min-height: 120px;
   flex-shrink: 0;
   background: var(--red);
 }
@@ -93,7 +95,6 @@ a:hover { text-decoration: underline; }
 .stats-bar {
   display: flex;
   margin-bottom: 4px;
-  margin-top: -4px;
 }
 .stats-count {
   background: var(--blue);
@@ -158,13 +159,12 @@ a:hover { text-decoration: underline; }
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  padding-top: 2px;
+  gap: 4px;
 }
 .controls-secondary {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 0;
+  gap: 4px;
 }
 .filter-btn {
   font-family: var(--font);
@@ -179,18 +179,12 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
   line-height: 1.4;
-  margin-left: -2px;
-  margin-top: -2px;
-  position: relative;
-}
-.filter-btn:first-child {
-  margin-left: 0;
+  flex-shrink: 0;
 }
 .filter-btn:hover,
 .filter-btn.active {
   background: var(--black);
   color: var(--white);
-  z-index: 1;
 }
 .refresh-btn {
   font-family: var(--font);
@@ -505,21 +499,22 @@ a:hover { text-decoration: underline; }
 @media (max-width: 600px) {
   .page-wrap { padding: 12px 10px; }
 
-  /* Header — scale to ~60% of desktop */
-  .header-accent-left  { width: 84px; min-height: 80px; }
+  /* Header */
+  .header-accent-left  { width: 84px; }
   .header-accent-right { width: 36px; }
   .header-body         { padding: 14px 18px; }
   .header-title        { font-size: 26px; letter-spacing: -0.5px; }
   .header-date         { font-size: 10px; }
   .header-time         { font-size: 10px; }
 
-  /* Stats bar */
-  .stats-accent        { width: 24px; }
-  .stats-count         { font-size: 12px; padding: 10px 14px; }
-  .stats-label         { padding: 8px 10px; font-size: 11px; }
+  /* Stats bar — stack so buttons get full width */
+  .stats-bar           { flex-direction: column; margin-top: 0; }
+  .stats-count         { width: 100%; font-size: 12px; padding: 10px 14px; }
+  .stats-label         { width: 100%; padding: 10px 12px; font-size: 11px; border-left: var(--border-thick); border-top: none; }
+  .stats-accent        { display: none; }
   .filter-btn          { font-size: 9px; padding: 4px 7px; }
-  .refresh-btn         { font-size: 11px; }
-  .sources-toggle-btn  { font-size: 11px; }
+  .refresh-btn         { font-size: 9px; padding: 4px 7px; }
+  .sources-toggle-btn  { font-size: 9px; padding: 4px 7px; }
 
   /* Sources */
   .sources-detail      { column-count: 1; }
@@ -531,7 +526,7 @@ a:hover { text-decoration: underline; }
   .card-meta           { gap: 5px; margin-bottom: 10px; }
   .card-read           { font-size: 11px; padding: 6px 12px; }
 
-  /* Footer — scale to ~60% of desktop */
+  /* Footer */
   .footer-yellow       { width: 30px; }
   .footer-red          { width: 30px; }
   .footer-blue         { width: 18px; }
@@ -540,8 +535,8 @@ a:hover { text-decoration: underline; }
 
 /* ---- Small phone ---- */
 @media (max-width: 380px) {
-  /* Header — scale to ~40% of desktop, never hidden */
-  .header-accent-left  { width: 50px; min-height: 60px; }
+  /* Header */
+  .header-accent-left  { width: 50px; }
   .header-accent-right { width: 20px; }
   .header-body         { padding: 10px 12px; }
   .header-title        { font-size: 20px; }
@@ -549,10 +544,13 @@ a:hover { text-decoration: underline; }
   .header-time         { font-size: 9px; letter-spacing: 1px; }
 
   /* Stats bar */
-  .stats-accent        { width: 16px; }
   .stats-count         { font-size: 11px; padding: 8px 10px; }
+  .stats-label         { padding: 8px 10px; }
+  .filter-btn          { font-size: 8px; padding: 3px 6px; }
+  .refresh-btn         { font-size: 8px; padding: 3px 6px; }
+  .sources-toggle-btn  { font-size: 8px; padding: 3px 6px; }
 
-  /* Footer — scale to ~30% of desktop */
+  /* Footer */
   .footer-yellow       { width: 20px; }
   .footer-red          { width: 20px; }
   .footer-blue         { width: 12px; }

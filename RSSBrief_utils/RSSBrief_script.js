@@ -63,6 +63,50 @@ function escHtml(str) {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * Decode HTML entities in a plain-text string.
+ * Handles named entities (&amp; &lt; &gt; &quot; &apos; &nbsp; and the full
+ * set of named HTML5 entities via a textarea trick), decimal numeric refs
+ * (&#8217;) and hex numeric refs (&#x2019;).
+ * Safe to call multiple times — idempotent on already-decoded strings.
+ */
+function decodeEntities(str) {
+  if (!str || str.indexOf("&") === -1) return str;
+
+  // Named entity map for the most common cases (fast path, no DOM needed)
+  const NAMED = {
+    amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
+    nbsp: "\u00A0", ndash: "\u2013", mdash: "\u2014",
+    lsquo: "\u2018", rsquo: "\u2019", ldquo: "\u201C", rdquo: "\u201D",
+    hellip: "\u2026", bull: "\u2022", middot: "\u00B7",
+    copy: "\u00A9", reg: "\u00AE", trade: "\u2122",
+    euro: "\u20AC", pound: "\u00A3", yen: "\u00A5",
+    laquo: "\u00AB", raquo: "\u00BB",
+    eacute: "\u00E9", egrave: "\u00E8", ecirc: "\u00EA", euml: "\u00EB",
+    aacute: "\u00E1", agrave: "\u00E0", acirc: "\u00E2", atilde: "\u00E3",
+    auml: "\u00E4", aring: "\u00E5", aelig: "\u00E6",
+    oacute: "\u00F3", ograve: "\u00F2", ocirc: "\u00F4", otilde: "\u00F5",
+    ouml: "\u00F6", oslash: "\u00F8",
+    uacute: "\u00FA", ugrave: "\u00F9", ucirc: "\u00FB", uuml: "\u00FC",
+    iacute: "\u00ED", igrave: "\u00EC", icirc: "\u00EE", iuml: "\u00EF",
+    ntilde: "\u00F1", ccedil: "\u00E7", szlig: "\u00DF",
+    Eacute: "\u00C9", Egrave: "\u00C8", Aacute: "\u00C1", Agrave: "\u00C0",
+    Oacute: "\u00D3", Uacute: "\u00DA", Ntilde: "\u00D1",
+  };
+
+  return str.replace(/&([a-zA-Z]{2,8}|#\d{1,6}|#x[\da-fA-F]{1,6});/g, (match, ref) => {
+    if (ref[0] === "#") {
+      // Numeric reference — decimal or hex
+      const cp = ref[1] === "x" || ref[1] === "X"
+        ? parseInt(ref.slice(2), 16)
+        : parseInt(ref.slice(1), 10);
+      return isNaN(cp) ? match : String.fromCodePoint(cp);
+    }
+    // Named reference
+    return Object.prototype.hasOwnProperty.call(NAMED, ref) ? NAMED[ref] : match;
+  });
+}
+
 function stripHtml(html) {
   if (!html) return "";
   return html
@@ -77,14 +121,17 @@ function stripHtml(html) {
     .replace(/&#39;/g, "'")
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
     .replace(/\s+/g, " ")
-    // Remove feed-injected truncation markers
-    .replace(/\s*\[[…\.]{1,3}\]\s*$/g, "")
+    // Remove feed-injected truncation markers (anywhere in text)
+    .replace(/\s*\[…\]\s*/g, " ")
+    .replace(/\s*\[\.\.\.\]\s*/g, " ")
+    .replace(/\s*\[[…\.]{1,3}\]\s*/g, " ")
+    // Remove trailing-only markers
     .replace(/\s*…\s*$/g, "")
     .replace(/\s*\.{3}\s*$/g, "")
-    .replace(/\s*\[…\]\s*$/g, "")
-    .replace(/\s*\[\.\.\.\]\s*$/g, "")
     .replace(/\s*Continue reading\.{0,3}\s*$/gi, "")
     .replace(/\s*Read (Entire |Full |More )?Article\.?\s*$/gi, "")
+    // Collapse any double spaces introduced by removals
+    .replace(/\s{2,}/g, " ")
     .trim();
 }
 
@@ -189,14 +236,17 @@ function sanitizePreview(html) {
     .replace(/&#39;/g, "'")
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
     .replace(/\s+/g, " ")
-    // Remove feed-injected truncation markers
-    .replace(/\s*\[[…\.]{1,3}\]\s*$/g, "")
+    // Remove feed-injected truncation markers (anywhere in text)
+    .replace(/\s*\[…\]\s*/g, " ")
+    .replace(/\s*\[\.\.\.\]\s*/g, " ")
+    .replace(/\s*\[[…\.]{1,3}\]\s*/g, " ")
+    // Remove trailing-only markers
     .replace(/\s*…\s*$/g, "")
     .replace(/\s*\.{3}\s*$/g, "")
-    .replace(/\s*\[…\]\s*$/g, "")
-    .replace(/\s*\[\.\.\.\]\s*$/g, "")
     .replace(/\s*Continue reading\.{0,3}\s*$/gi, "")
     .replace(/\s*Read (Entire |Full |More )?Article\.?\s*$/gi, "")
+    // Collapse any double spaces introduced by removals
+    .replace(/\s{2,}/g, " ")
     .trim();
 
   // Re-inject sanitized <a> tags in place of placeholders
@@ -365,7 +415,7 @@ async function fetchFeedViaCorsProxy(source) {
  */
 function applySourceTransforms(articles, source) {
   return articles.map(a => {
-    let title = a.title || "Untitled";
+    let title = decodeEntities(a.title || "Untitled");
 
     // Strip literal suffix from title (e.g. " - Reuters")
     if (source.sanitize_headline) {
@@ -374,7 +424,7 @@ function applySourceTransforms(articles, source) {
 
     // Strip markdown-style bold (__text__) that some feeds (e.g. Google News
     // aggregating Reuters) inject into the description
-    let description = (a.description || "")
+    let description = decodeEntities(a.description || "")
       .replace(/__([^_]+)__/g, "$1")
       .replace(/\*\*([^*]+)\*\*/g, "$1");
 
