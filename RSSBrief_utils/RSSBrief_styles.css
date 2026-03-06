@@ -484,9 +484,9 @@ a:hover { text-decoration: underline; }
   .stats-count         { min-width: 120px; font-size: 12px; padding: 10px 12px; gap: 6px; }
   .stats-label         { padding: 8px 10px; font-size: 11px; }
   .sources-detail      { column-count: 1; }
-  .footer-yellow,
-  .footer-red,
-  .footer-blue         { display: none; }
+  .footer-yellow       { width: 30px; height: 36px; }
+  .footer-red          { width: 30px; }
+  .footer-blue         { width: 16px; }
   .filter-btn          { font-size: 9px; padding: 4px 7px; }
   .refresh-btn         { font-size: 11px; margin-left: 6px; }
   .card-read           { font-size: 11px; padding: 6px 12px; }
