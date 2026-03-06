@@ -99,19 +99,20 @@ a:hover { text-decoration: underline; }
   color: var(--white);
   font-size: 14px;
   font-weight: bold;
-  padding: 12px 20px;
+  padding: 10px 16px;
   border: var(--border-thick);
   white-space: nowrap;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 165px;
+  justify-content: center;
+  gap: 6px;
+  min-width: 160px;
 }
 .stats-count-top {
   display: flex;
   align-items: center;
-  gap: 0;
+  justify-content: space-between;
+  gap: 8px;
 }
 .sources-toggle-btn {
   font-family: var(--font);
@@ -164,7 +165,6 @@ a:hover { text-decoration: underline; }
 .controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
   align-items: center;
 }
 .filter-btn {
@@ -180,11 +180,18 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
   line-height: 1.4;
+  margin-left: -2px;
+  margin-bottom: -2px;
+  position: relative;
+}
+.filter-btn:first-child {
+  margin-left: 0;
 }
 .filter-btn:hover,
 .filter-btn.active {
   background: var(--black);
   color: var(--white);
+  z-index: 1;
 }
 .refresh-btn {
   font-family: var(--font);
@@ -197,7 +204,6 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   transition: border-color 0.1s, background 0.1s;
   line-height: 1.2;
-  margin-left: 10px;
   flex-shrink: 0;
 }
 .refresh-btn:hover {
@@ -210,7 +216,7 @@ a:hover { text-decoration: underline; }
 .sources-detail {
   display: none;
   border: var(--border);
-  border-top: none;
+  margin-top: -3px;
   margin-bottom: 4px;
   padding: 12px 14px;
   background: #fafafa;
@@ -485,7 +491,7 @@ a:hover { text-decoration: underline; }
   .stats-count         { min-width: 130px; font-size: 12px; padding: 10px 14px; gap: 6px; }
   .stats-label         { padding: 8px 10px; font-size: 11px; }
   .filter-btn          { font-size: 9px; padding: 4px 7px; }
-  .refresh-btn         { font-size: 11px; margin-left: 6px; }
+  .refresh-btn         { font-size: 11px; }
 
   /* Sources */
   .sources-detail      { column-count: 1; }
