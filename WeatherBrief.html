@@ -1,57 +1,86 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Weather Brief</title>
-<style>
-    body{background-color:#fff!important;color:#1A1A1A!important;margin:0;padding:0}
-    .bg-r{background:linear-gradient(135deg,rgb(217,33,33) 0%,rgb(217,33,33) 100%)!important;background-color:rgb(217,33,33)!important}
-    .bg-b{background:linear-gradient(135deg,rgb(27,75,154) 0%,rgb(27,75,154) 100%)!important;background-color:rgb(27,75,154)!important}
-    .bg-y{background:linear-gradient(135deg,rgb(247,213,0) 0%,rgb(247,213,0) 100%)!important;background-color:rgb(247,213,0)!important}
-    .bg-k{background-color:#1A1A1A!important}
-    table{background-color:transparent!important}
-    #ld{position:fixed;inset:0;background:#fff;display:flex;align-items:center;justify-content:center;z-index:1000;transition:opacity .4s;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif}
-    #ld.h{opacity:0;pointer-events:none}
-    @keyframes cyc{0%,100%{background:rgb(217,33,33)}33%{background:rgb(247,213,0)}66%{background:rgb(27,75,154)}}
-    /* ── Mobile ── */
-    @media(max-width:600px){
-        .page-outer td[align="center"]{padding:12px 10px!important}
-        .header-accent-left{width:50px!important;min-height:70px!important}
-        .header-accent-right{width:24px!important}
-        .header-title{font-size:22px!important;letter-spacing:-0.5px!important}
-        .header-body{padding:12px 14px!important}
-        .card-body-td{padding:12px 14px!important}
-        .hero-temp{font-size:52px!important;letter-spacing:-2px!important}
-        .hero-temp-unit{font-size:28px!important}
-        .section-label{font-size:10px!important}
-        .footer-accent{display:none!important}
-        .hourly-item{min-width:60px!important;padding:10px 5px!important}
-    }
-    @media(max-width:380px){
-        .header-accent-left{display:none!important}
-        .header-body{border-left:4px solid #1A1A1A!important}
-        .header-title{font-size:20px!important}
-    }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weather Brief</title>
+  <link rel="stylesheet" href="WeatherBrief_utils/WeatherBrief_styles.css">
 </head>
 <body>
-<div id="ld">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:660px;max-width:calc(100% - 30px)">
-<tr>
-<td id="ldac" width="6" style="background:rgb(217,33,33);border:3px solid #1A1A1A;border-right:none;animation:cyc 3s ease-in-out infinite"></td>
-<td style="background:#fff;border:3px solid #1A1A1A;padding:28px 30px">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:#1A1A1A;padding:4px 10px"><span style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:bold;color:#fff;text-transform:uppercase;letter-spacing:1.5px">Weather Brief</span></td></tr></table>
-<div id="ldtxt" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;color:#1A1A1A;padding-top:14px;line-height:1.6">Please allow location access to generate your weather report.</div>
-<div id="ldsub" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#666;padding-top:6px;line-height:1.5">Waiting for permission...</div>
-</td>
-</tr>
-</table>
+
+<!-- ============ LOADING OVERLAY ============ -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="loading-card">
+    <div class="loading-accent" id="loading-accent"></div>
+    <div class="loading-body">
+      <div class="loading-tag">Weather Brief</div>
+      <div class="loading-text" id="loading-text">Please allow location access to generate your weather report.</div>
+      <div class="loading-subtext" id="loading-subtext">Waiting for permission...</div>
+    </div>
+  </div>
 </div>
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="page-outer" style="background:#fff"><tr><td align="center" style="padding:30px 15px">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="660" style="max-width:660px;width:100%;table-layout:fixed">
-<tbody id="out"></tbody>
-</table></td></tr></table>
+
+<div class="page-wrap">
+  <div class="main-container">
+
+    <!-- ============ HEADER ============ -->
+    <div class="header-row">
+      <div class="header-accent-left"></div>
+      <div class="header-body">
+        <div class="header-title" id="header-title">Weather Brief</div>
+        <div class="header-date"  id="header-date"></div>
+        <div class="header-time"  id="header-time"></div>
+      </div>
+      <div class="header-accent-right"></div>
+    </div>
+
+    <!-- ============ STATS BAR ============ -->
+    <div class="stats-bar">
+      <div class="stats-count" id="location-label">
+        <span>WEATHER BRIEF</span>
+      </div>
+      <div class="stats-label">
+        <div class="controls">
+          <span id="filter-buttons"></span>
+        </div>
+        <div class="controls controls-secondary">
+          <button class="refresh-btn" id="refresh-btn">↻ Refresh</button>
+        </div>
+      </div>
+      <div class="stats-accent"></div>
+    </div>
+
+    <!-- ============ CONTENT ============ -->
+    <div id="content-wrapper"></div>
+
+    <!-- ============ FOOTER ============ -->
+    <div class="footer-row">
+      <div class="footer-yellow"></div>
+      <div class="footer-body">
+        <span class="footer-text">Weather Brief · Personal Use Only</span>
+      </div>
+      <div class="footer-red"></div>
+      <div class="footer-blue"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================================================
+     CONFIGURATION
+     Edit window.WEATHER_CONFIG to customize the page.
+
+     title            — header/page title
+     cacheTTLMinutes  — how long to reuse cached data (default 15)
+     units            — "imperial" or "metric" (default "imperial")
+     ============================================================ -->
+<script>
+window.WEATHER_CONFIG = {
+  title: "Weather Brief",
+  cacheTTLMinutes: 15,
+  units: "imperial",
+};
+</script>
 <script src="WeatherBrief_utils/WeatherBrief_script.js"></script>
 </body>
 </html>

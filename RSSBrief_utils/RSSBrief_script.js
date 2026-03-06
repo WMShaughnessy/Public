@@ -370,10 +370,11 @@ function deduplicateArticles(articles) {
 }
 
 /**
- * Filter out promotional / ad-like Tech articles.
- * Checks title and description for deal/savings/ad patterns.
+ * Filter out promotional / ad-like / buyer-guide Tech articles.
+ * Checks title and description for deal/savings/ad/listicle patterns.
  */
 const TECH_SPAM_PATTERNS = [
+  // Deals & pricing
   /\bdeal(?:s)?\b/i,
   /\bsaving(?:s)?\b/i,
   /\bsale\b/i,
@@ -385,6 +386,7 @@ const TECH_SPAM_PATTERNS = [
   /\b(?:flash|clearance)\s*sale/i,
   /\bprice\s*(?:drop|cut|slash)/i,
   /\b\d+\s*%\s*off\b/i,
+  /\$\d+\s*off\b/i,
   /\bunder\s*\$\d+/i,
   /\bfor\s*(?:just|only)\s*\$/i,
   /\blowest\s*price/i,
@@ -392,9 +394,26 @@ const TECH_SPAM_PATTERNS = [
   /\bbest\s*(?:buy|price|deal)/i,
   /\bsave\s*\$\d+/i,
   /\baffordable\b/i,
-  /\bbudget\b/i,
   /\bgift\s*(?:guide|idea|pick)/i,
   /\bsponsored\b/i,
+  // Buyer guides & listicles
+  /\bbest\s+.{0,30}\s+for\s+20\d\d/i,
+  /\bbest\s+.{0,30}\s+in\s+20\d\d/i,
+  /\bbest\s+.{0,30}\s+of\s+20\d\d/i,
+  /\btop\s+\d+\s+(?:best\s+)?/i,
+  /\bbuyer'?s?\s*guide/i,
+  /\bbuying\s*guide/i,
+  /\bwe\s+(?:like|love|recommend|tested|picked|reviewed)/i,
+  /\bour\s+(?:favorite|pick|top)/i,
+  /\bworth\s+(?:buying|it)\b/i,
+  /\bshould\s+you\s+buy\b/i,
+  // Plans & subscriptions (consumer comparison)
+  /\b(?:prepaid|phone|cell|data|streaming|wireless)\s*plan/i,
+  /\bvs\.?\s+.{0,20}\s+vs\.?\b/i,
+  // Budget / value framing
+  /\bbudget\b/i,
+  /\bbang\s+for\s+(?:your|the)\s+buck/i,
+  /\bvalue\s+(?:pick|for\s+money)/i,
 ];
 
 function isTechSpam(article) {
@@ -404,116 +423,119 @@ function isTechSpam(article) {
 
 /**
  * Fill the article list with a weighted ratio favoring "News".
- * Cycle: 6 News, 3 Other (Business/Gov/Legal), 1 Tech per 10 slots.
+ * Cycle: 8 News, 1 Business, 1 Gov/Legal, 1 Tech per 11 slots.
  * Tech articles are pre-filtered to remove deal/ad spam.
  *
- * Recency boost: articles published within the last 90 minutes are
- * guaranteed a slot regardless of category, then the weighted cycle
- * fills remaining slots from older articles.
+ * Strict recency: only articles ≤2 hours old are used. If that doesn't
+ * fill the requested total, articles up to 4 hours old are added to
+ * fill the gap. Articles older than 4 hours are never shown.
  *
  * After selection, the final list is sorted newest-first for display.
  */
 function weightedCategoryFill(articles, total) {
-  const NEWS_SLOTS  = 6;
-  const MID_SLOTS   = 3;  // Business, Gov, Legal
-  const TECH_SLOTS  = 1;
-  const CYCLE       = NEWS_SLOTS + MID_SLOTS + TECH_SLOTS; // 10
-  const RECENCY_MS  = 90 * 60 * 1000; // 90 minutes
+  const NEWS_SLOTS   = 8;
+  const BIZ_SLOTS    = 1;
+  const GOVLEG_SLOTS = 1;
+  const TECH_SLOTS   = 1;
+  const CYCLE        = NEWS_SLOTS + BIZ_SLOTS + GOVLEG_SLOTS + TECH_SLOTS; // 11
+  const FRESH_MS    = 6  * 60 * 60 * 1000;   // 6 hours
+  const EXTENDED_MS = 14 * 60 * 60 * 1000;   // 14 hours
 
   const now = Date.now();
 
-  // Split into recent (guaranteed) and older (weighted fill)
-  // Tech spam is excluded from both pools
-  const recent = [];
-  const older  = [];
+  // Strictly bucket — tech spam excluded everywhere
+  const fresh    = [];
+  const extended = [];
   for (const a of articles) {
     if (a.category === "Tech" && isTechSpam(a)) continue;
     const t = a.pubDate ? new Date(a.pubDate).getTime() : 0;
-    if (t > 0 && (now - t) <= RECENCY_MS && (now - t) >= 0) {
-      recent.push(a);
-    } else {
-      older.push(a);
+    const age = now - t;
+    if (t > 0 && age >= 0 && age <= FRESH_MS) {
+      fresh.push(a);
+    } else if (t > 0 && age > FRESH_MS && age <= EXTENDED_MS) {
+      extended.push(a);
     }
+    // >14h articles are dropped entirely
   }
 
-  // Cap recent articles so they don't consume the entire list
-  const recentCap = Math.min(recent.length, Math.floor(total * 0.5));
-  const boosted = recent.slice(0, recentCap);
-  // Any recent articles that didn't fit go back into the older pool
-  const overflow = recent.slice(recentCap);
-  const remaining = overflow.concat(older);
+  // First pass: weighted fill using ONLY fresh (≤6h) articles
+  const freshResult = _weightedSelect(fresh, total, NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_SLOTS, CYCLE);
 
-  const slotsLeft = total - boosted.length;
+  // If we couldn't fill all slots, pull from extended (6-14h) using
+  // the same weighted selection so the ratio is preserved.
+  if (freshResult.length < total) {
+    const needed = total - freshResult.length;
+    const usedSet = new Set(freshResult.map(a => a.title + "|" + a.source));
+    const extPool = extended.filter(a => !usedSet.has(a.title + "|" + a.source));
 
-  // Weighted fill: News (6 slots) > Other (3 slots) > Tech (1 slot) per 10-slot cycle
-  const news = remaining.filter(a => a.category === "News");
-  const tech = remaining.filter(a => a.category === "Tech" && !isTechSpam(a));
-
-  // Round-robin queue for non-News, non-Tech categories
-  const midByCat = {};
-  for (const a of remaining) {
-    if (a.category === "News" || a.category === "Tech") continue;
-    const cat = a.category || "Uncategorized";
-    if (!midByCat[cat]) midByCat[cat] = [];
-    midByCat[cat].push(a);
-  }
-  const midCats = Object.keys(midByCat).sort();
-  const midQueue = [];
-  const midIdx = {};
-  for (const cat of midCats) midIdx[cat] = 0;
-  let midExhausted = 0;
-  while (midExhausted < midCats.length) {
-    midExhausted = 0;
-    for (const cat of midCats) {
-      if (midIdx[cat] < midByCat[cat].length) {
-        midQueue.push(midByCat[cat][midIdx[cat]++]);
-      } else {
-        midExhausted++;
-      }
-    }
+    const extFill = _weightedSelect(extPool, needed, NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_SLOTS, CYCLE);
+    freshResult.push(...extFill);
   }
 
-  const weighted = [];
-  let ni = 0; // news index
-  let mi = 0; // mid (other non-tech) index
-  let ti = 0; // tech index
-
-  // Cycle: 6 News, 3 Other, 1 Tech
-  const NEWS_END  = NEWS_SLOTS;                // 0-5 = news
-  const MID_END   = NEWS_SLOTS + MID_SLOTS;    // 6-8 = other
-  // pos 9 = tech
-
-  while (weighted.length < slotsLeft) {
-    const pos = weighted.length % CYCLE;
-    let pushed = false;
-
-    if (pos < NEWS_END) {
-      // News slot — fallback to mid, then tech
-      if (ni < news.length)          { weighted.push(news[ni++]); pushed = true; }
-      else if (mi < midQueue.length) { weighted.push(midQueue[mi++]); pushed = true; }
-      else if (ti < tech.length)     { weighted.push(tech[ti++]); pushed = true; }
-    } else if (pos < MID_END) {
-      // Other slot — fallback to tech, then news
-      if (mi < midQueue.length)      { weighted.push(midQueue[mi++]); pushed = true; }
-      else if (ti < tech.length)     { weighted.push(tech[ti++]); pushed = true; }
-      else if (ni < news.length)     { weighted.push(news[ni++]); pushed = true; }
-    } else {
-      // Tech slot — fallback to mid, then news
-      if (ti < tech.length)          { weighted.push(tech[ti++]); pushed = true; }
-      else if (mi < midQueue.length) { weighted.push(midQueue[mi++]); pushed = true; }
-      else if (ni < news.length)     { weighted.push(news[ni++]); pushed = true; }
-    }
-
-    if (!pushed) break;
-  }
-
-  // Combine boosted + weighted, then sort newest-first
-  const selected = boosted.concat(weighted);
-  selected.sort((a, b) => {
+  // Sort newest-first for display
+  freshResult.sort((a, b) => {
     const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
     const db = b.pubDate ? new Date(b.pubDate).getTime() : 0;
     return db - da;
   });
+
+  return freshResult;
+}
+
+/** Internal: weighted category select from a pool */
+function _weightedSelect(pool, total, NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_SLOTS, CYCLE) {
+  const news   = pool.filter(a => a.category === "News");
+  const biz    = pool.filter(a => a.category === "Business");
+  const govleg = pool.filter(a => GOV_LEGAL_CATS.has(a.category));
+  const tech   = pool.filter(a => a.category === "Tech");
+  // Anything else goes into an overflow bucket
+  const other  = pool.filter(a =>
+    a.category !== "News" && a.category !== "Business" &&
+    a.category !== "Tech" && !GOV_LEGAL_CATS.has(a.category)
+  );
+
+  const selected = [];
+  let ni = 0, bi = 0, gi = 0, ti = 0, oi = 0;
+  const NEWS_END   = NEWS_SLOTS;
+  const BIZ_END    = NEWS_END + BIZ_SLOTS;
+  const GOVLEG_END = BIZ_END + GOVLEG_SLOTS;
+
+  while (selected.length < total) {
+    const pos = selected.length % CYCLE;
+    let pushed = false;
+
+    if (pos < NEWS_END) {
+      // News slot — fallback to biz → govleg → other → tech
+      if (ni < news.length)          { selected.push(news[ni++]); pushed = true; }
+      else if (bi < biz.length)      { selected.push(biz[bi++]); pushed = true; }
+      else if (gi < govleg.length)   { selected.push(govleg[gi++]); pushed = true; }
+      else if (oi < other.length)    { selected.push(other[oi++]); pushed = true; }
+      else if (ti < tech.length)     { selected.push(tech[ti++]); pushed = true; }
+    } else if (pos < BIZ_END) {
+      // Business slot — fallback to govleg → news → other → tech
+      if (bi < biz.length)           { selected.push(biz[bi++]); pushed = true; }
+      else if (gi < govleg.length)   { selected.push(govleg[gi++]); pushed = true; }
+      else if (ni < news.length)     { selected.push(news[ni++]); pushed = true; }
+      else if (oi < other.length)    { selected.push(other[oi++]); pushed = true; }
+      else if (ti < tech.length)     { selected.push(tech[ti++]); pushed = true; }
+    } else if (pos < GOVLEG_END) {
+      // Gov & Legal slot — fallback to biz → news → other → tech
+      if (gi < govleg.length)        { selected.push(govleg[gi++]); pushed = true; }
+      else if (bi < biz.length)      { selected.push(biz[bi++]); pushed = true; }
+      else if (ni < news.length)     { selected.push(news[ni++]); pushed = true; }
+      else if (oi < other.length)    { selected.push(other[oi++]); pushed = true; }
+      else if (ti < tech.length)     { selected.push(tech[ti++]); pushed = true; }
+    } else {
+      // Tech slot — fallback to other → govleg → biz → news
+      if (ti < tech.length)          { selected.push(tech[ti++]); pushed = true; }
+      else if (oi < other.length)    { selected.push(other[oi++]); pushed = true; }
+      else if (gi < govleg.length)   { selected.push(govleg[gi++]); pushed = true; }
+      else if (bi < biz.length)      { selected.push(biz[bi++]); pushed = true; }
+      else if (ni < news.length)     { selected.push(news[ni++]); pushed = true; }
+    }
+
+    if (!pushed) break;
+  }
 
   return selected;
 }
@@ -1084,11 +1106,14 @@ async function loadAllFeeds(force = false) {
       return db - da;
     });
 
-  // Per-source cap
+  // Per-source cap — News gets a higher allowance since the 6hr time
+  // gate in weightedCategoryFill will naturally limit the final count
+  const NEWS_PER_SOURCE = 10;
   const sourceCounts = {};
   const limited = rawArticles.filter(a => {
     sourceCounts[a.source] = (sourceCounts[a.source] || 0) + 1;
-    return sourceCounts[a.source] <= CFG.maxPerSource;
+    const cap = a.category === "News" ? NEWS_PER_SOURCE : CFG.maxPerSource;
+    return sourceCounts[a.source] <= cap;
   });
 
   // Deduplicate + weighted fill
