@@ -77,6 +77,14 @@ function stripHtml(html) {
     .replace(/&#39;/g, "'")
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
     .replace(/\s+/g, " ")
+    // Remove feed-injected truncation markers
+    .replace(/\s*\[[…\.]{1,3}\]\s*$/g, "")
+    .replace(/\s*…\s*$/g, "")
+    .replace(/\s*\.{3}\s*$/g, "")
+    .replace(/\s*\[…\]\s*$/g, "")
+    .replace(/\s*\[\.\.\.\]\s*$/g, "")
+    .replace(/\s*Continue reading\.{0,3}\s*$/gi, "")
+    .replace(/\s*Read (Entire |Full |More )?Article\.?\s*$/gi, "")
     .trim();
 }
 
@@ -118,6 +126,16 @@ function categoryClass(cat) {
 }
 
 /**
+ * Strip a literal suffix from a title (e.g. sanitize_headline: " - Reuters").
+ * Comparison is case-sensitive and trims the result.
+ */
+function sanitizeTitle(title, strip) {
+  if (!strip || !title) return title;
+  if (title.endsWith(strip)) return title.slice(0, -strip.length).trimEnd();
+  return title;
+}
+
+/**
  * Return the display categories for filter buttons.
  * Government and Legal are collapsed into one "Gov & Legal" entry.
  */
@@ -135,6 +153,59 @@ function displayCategories(articles) {
     }
   }
   return cats.sort();
+}
+
+/**
+ * Sanitize article description for display.
+ * Strips all HTML except <a> tags, which are preserved as safe clickable links.
+ * Any <a> without visible text falls back to the href as link text.
+ */
+function sanitizePreview(html) {
+  if (!html) return "";
+
+  // Extract and stash <a> tags, replacing them with placeholders
+  const links = [];
+  const withPlaceholders = html.replace(/<a\b([^>]*)>(.*?)<\/a>/gis, (_, attrs, inner) => {
+    const hrefMatch = attrs.match(/href=["']([^"']+)["']/i);
+    const href      = hrefMatch ? hrefMatch[1] : "";
+    // Strip any nested tags from the link text
+    const text = inner.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    const label = text || href;
+    if (!href) return label; // no href — just render the text
+    links.push({ href, label });
+    return `\x00LINK${links.length - 1}\x00`;
+  });
+
+  // Strip remaining HTML from the rest of the content
+  let plain = withPlaceholders
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<\/p>/gi, " ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/\s+/g, " ")
+    // Remove feed-injected truncation markers
+    .replace(/\s*\[[…\.]{1,3}\]\s*$/g, "")
+    .replace(/\s*…\s*$/g, "")
+    .replace(/\s*\.{3}\s*$/g, "")
+    .replace(/\s*\[…\]\s*$/g, "")
+    .replace(/\s*\[\.\.\.\]\s*$/g, "")
+    .replace(/\s*Continue reading\.{0,3}\s*$/gi, "")
+    .replace(/\s*Read (Entire |Full |More )?Article\.?\s*$/gi, "")
+    .trim();
+
+  // Re-inject sanitized <a> tags in place of placeholders
+  plain = plain.replace(/\x00LINK(\d+)\x00/g, (_, i) => {
+    const { href, label } = links[Number(i)];
+    return `<a href="${escHtml(href)}" target="_blank" rel="noopener noreferrer" class="preview-link">${escHtml(label)}</a>`;
+  });
+
+  return plain;
 }
 
 /* ============================================================
@@ -244,13 +315,14 @@ async function fetchFeedViaRss2Json(source) {
   if (data.status !== "ok") throw new Error(data.message || "rss2json error");
 
   return (data.items || []).map(item => ({
-    title:       item.title || "Untitled",
+    title:       sanitizeTitle(item.title || "Untitled", source.sanitize_headline),
     link:        item.link  || item.guid || "",
     pubDate:     item.pubDate || null,
     description: item.description || item.content || "",
     source:      source.name,
     category:    source.category || "Uncategorized",
     sourceUrl:   source.url,
+    headlineOnly: !!source.headline_only,
   }));
 }
 
@@ -273,13 +345,44 @@ async function fetchFeedViaCorsProxy(source) {
     const pubDate = get("pubDate") || get("published") || get("updated") || null;
 
     return {
-      title:       get("title") || "Untitled",
+      title:       sanitizeTitle(get("title") || "Untitled", source.sanitize_headline),
       link:        link.trim(),
       pubDate:     pubDate ? pubDate.trim() : null,
       description: get("description") || get("summary") || get("content") || "",
       source:      source.name,
       category:    source.category || "Uncategorized",
       sourceUrl:   source.url,
+      headlineOnly: !!source.headline_only,
+    };
+  });
+}
+
+/**
+ * Apply per-source transforms to a list of articles.
+ * Runs on both freshly-fetched and cached articles so config changes
+ * (headline_only, sanitize_headline) take effect immediately without
+ * needing a cache bust.
+ */
+function applySourceTransforms(articles, source) {
+  return articles.map(a => {
+    let title = a.title || "Untitled";
+
+    // Strip literal suffix from title (e.g. " - Reuters")
+    if (source.sanitize_headline) {
+      title = sanitizeTitle(title, source.sanitize_headline);
+    }
+
+    // Strip markdown-style bold (__text__) that some feeds (e.g. Google News
+    // aggregating Reuters) inject into the description
+    let description = (a.description || "")
+      .replace(/__([^_]+)__/g, "$1")
+      .replace(/\*\*([^*]+)\*\*/g, "$1");
+
+    return {
+      ...a,
+      title,
+      description,
+      headlineOnly: !!source.headline_only,
     };
   });
 }
@@ -287,16 +390,16 @@ async function fetchFeedViaCorsProxy(source) {
 async function fetchFeed(source) {
   const cached = readCache(source.url);
   if (cached) {
-    return { articles: cached.articles, fromCache: true, error: null };
+    return { articles: applySourceTransforms(cached.articles, source), fromCache: true, error: null };
   }
   try {
-    const articles = await fetchFeedViaRss2Json(source);
+    const articles = applySourceTransforms(await fetchFeedViaRss2Json(source), source);
     writeCache(source.url, articles);
     return { articles, fromCache: false, error: null };
   } catch (e1) {
     console.warn(`[RSSBrief] rss2json failed for "${source.name}": ${e1.message}`);
     try {
-      const articles = await fetchFeedViaCorsProxy(source);
+      const articles = applySourceTransforms(await fetchFeedViaCorsProxy(source), source);
       writeCache(source.url, articles);
       return { articles, fromCache: false, error: null };
     } catch (e2) {
@@ -502,8 +605,7 @@ function renderCategoryFilters(articles) {
 
 function buildArticleCard(article, colorIndex) {
   const color   = colorForIndex(colorIndex);
-  const preview = stripHtml(article.description);
-  const clipped = preview.length > 300 ? preview.slice(0, 297) + "…" : preview;
+  const preview = sanitizePreview(article.description);
   const timeStr = formatDate(article.pubDate);
   const catCls  = categoryClass(article.category);
 
@@ -521,7 +623,7 @@ function buildArticleCard(article, colorIndex) {
         ${escHtml(article.title)}
       </a>
     </div>
-    ${clipped ? `<div class="card-preview">${escHtml(clipped)}</div>` : ""}
+    ${(preview && !article.headlineOnly) ? `<div class="card-preview">${preview}</div>` : ""}
     <a class="card-read" href="${escHtml(article.link)}" target="_blank" rel="noopener noreferrer">Read →</a>
   </div>
 </div>`.trim();

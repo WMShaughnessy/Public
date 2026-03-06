@@ -68,7 +68,9 @@
      cacheTTLMinutes  — how long to reuse cached data (default 15)
      dedupThreshold   — title similarity 0–1 to treat as duplicate (default 0.72)
      rss2jsonApiKey   — optional free key from https://rss2json.com/#rss_to_json_api
-     sources          — list of { name, url, category }
+     sources          — list of { name, url, category,
+                          headline_only (bool)   — omit preview, show title only
+                          sanitize_headline (str) — remove this string from every title }
      ============================================================ -->
 <script>
 window.BRIEF_CONFIG = {
@@ -83,7 +85,7 @@ window.BRIEF_CONFIG = {
     // ——— News ———
     { name: "BBC News - World",                  url: "http://feeds.bbci.co.uk/news/world/rss.xml",                                                                                         category: "News" },
     { name: "The New York Times",                url: "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",                                                                          category: "News" },
-    { name: "Reuters",                           url: "https://news.google.com/rss/search?q=site:reuters.com&hl=en-US&gl=US&ceid=US:en",       category: "News" },
+    { name: "Reuters",                           url: "https://news.google.com/rss/search?q=site:reuters.com&hl=en-US&gl=US&ceid=US:en",       category: "News", headline_only: true, sanitize_headline: " - Reuters" },
     { name: "The Guardian US",                   url: "https://www.theguardian.com/us-news/rss",                                                                                            category: "News" },
     { name: "NPR",                               url: "https://feeds.npr.org/1001/rss.xml",                                                                                                 category: "News" },
     { name: "Vox",                               url: "https://www.vox.com/rss/index.xml",                                                                                                  category: "News" },
