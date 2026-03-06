@@ -142,7 +142,14 @@ function displayCategories(articles) {
    ============================================================ */
 
 function cacheKey(sourceUrl) {
-  return CACHE_PREFIX + btoa(sourceUrl).replace(/[^a-zA-Z0-9]/g, "").slice(0, 40);
+  // Simple string hash to avoid collisions from btoa truncation
+  let hash = 0;
+  for (let i = 0; i < sourceUrl.length; i++) {
+    const ch = sourceUrl.charCodeAt(i);
+    hash = ((hash << 5) - hash) + ch;
+    hash |= 0; // 32-bit integer
+  }
+  return CACHE_PREFIX + Math.abs(hash).toString(36);
 }
 
 function readCache(sourceUrl) {
@@ -357,6 +364,8 @@ function renderSourcesPanel(statuses) {
   const detail = document.getElementById("sources-detail");
   if (!detail) return;
 
+  const STALE_MS = 48 * 60 * 60 * 1000; // 48 hours
+
   // Group by category
   const groups = {};
   for (const s of statuses) {
@@ -368,12 +377,31 @@ function renderSourcesPanel(statuses) {
   const html = Object.keys(groups).sort().map(cat => {
     const items = groups[cat].map(s => {
       const isActive   = activeSource === s.name;
-      const statusCls  = s.error ? "src-fail" : (s.fromCache ? "src-cache" : "src-ok");
-      const statusIcon = s.error ? "✗" : (s.fromCache ? "↩" : "✓");
+
+      // Determine staleness — only for sources that have dated articles
+      const isStale = s.latestPubDate && (Date.now() - s.latestPubDate > STALE_MS);
+      const staleLabel = isStale ? relativeTime(new Date(s.latestPubDate).toISOString()) : "";
+
+      let statusCls, statusIcon;
+      if (s.error) {
+        statusCls  = "src-fail";
+        statusIcon = "✗";
+      } else if (isStale) {
+        statusCls  = "src-stale";
+        statusIcon = "⚠";
+      } else if (s.fromCache) {
+        statusCls  = "src-cache";
+        statusIcon = "↩";
+      } else {
+        statusCls  = "src-ok";
+        statusIcon = "✓";
+      }
+
       return `<div class="source-item ${isActive ? "active" : ""} ${statusCls}"
                    data-source="${escHtml(s.name)}">
         <span class="src-icon">${statusIcon}</span>
         <span class="src-name">${escHtml(s.name)}</span>
+        ${isStale ? `<span class="src-stale-age">${escHtml(staleLabel)}</span>` : ""}
       </div>`;
     }).join("");
 
@@ -385,12 +413,7 @@ function renderSourcesPanel(statuses) {
 
   detail.innerHTML = html;
 
-  // Update Sources toggle label with error count if any
-  const failed = statuses.filter(s => s.error);
-  const toggleBtn = document.getElementById("sources-toggle");
-  if (toggleBtn && failed.length > 0) {
-    toggleBtn.textContent = (sourcesOpen ? "Sources ▴" : "Sources ▾") + ` ⚠${failed.length}`;
-  }
+
 
   // Click handlers
   detail.querySelectorAll(".source-item").forEach(el => {
@@ -418,9 +441,7 @@ function initSourcesToggle() {
     if (!detail) return;
     sourcesOpen = !sourcesOpen;
     detail.classList.toggle("visible", sourcesOpen);
-    const base = "Sources";
-    const errorPart = btn.textContent.includes("⚠") ? " " + btn.textContent.split(" ").pop() : "";
-    btn.textContent = (sourcesOpen ? `${base} ▴` : `${base} ▾`) + errorPart;
+    btn.textContent = sourcesOpen ? "Sources ▴" : "Sources ▾";
     btn.classList.toggle("active", sourcesOpen);
   });
 }
@@ -490,10 +511,10 @@ function buildArticleCard(article, colorIndex) {
 <div class="article-card" style="animation-delay:${(colorIndex % 20) * 30}ms">
   <div class="card-accent ${escHtml(color)}"></div>
   <div class="card-body">
+    ${timeStr ? `<div class="card-time">${escHtml(timeStr)}</div>` : ""}
     <div class="card-meta">
       <span class="card-source">${escHtml(article.source)}</span>
       ${article.category ? `<span class="card-category ${catCls}">${escHtml(article.category)}</span>` : ""}
-      ${timeStr ? `<span class="card-time">${escHtml(timeStr)}</span>` : ""}
     </div>
     <div class="card-title">
       <a href="${escHtml(article.link)}" target="_blank" rel="noopener noreferrer">
@@ -627,6 +648,11 @@ async function loadAllFeeds(force = false) {
           count:     result.articles.length,
           error:     result.error,
           fromCache: result.fromCache,
+          latestPubDate: result.articles.reduce((latest, a) => {
+            if (!a.pubDate) return latest;
+            const t = new Date(a.pubDate).getTime();
+            return (t > latest) ? t : latest;
+          }, 0) || null,
         });
         return result.articles;
       })

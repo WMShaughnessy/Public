@@ -72,6 +72,7 @@ a:hover { text-decoration: underline; }
   letter-spacing: -1px;
   line-height: 1;
   color: var(--black);
+  margin-bottom: 8px;
 }
 .header-date,
 .header-time {
@@ -79,9 +80,8 @@ a:hover { text-decoration: underline; }
   color: var(--grey);
   text-transform: uppercase;
   letter-spacing: 2px;
-  margin-top: 6px;
 }
-.header-time { margin-top: 2px; }
+.header-date { margin-bottom: 1px; }
 .header-accent-right {
   width: 60px;
   flex-shrink: 0;
@@ -99,44 +99,35 @@ a:hover { text-decoration: underline; }
   color: var(--white);
   font-size: 14px;
   font-weight: bold;
-  padding: 10px 16px;
+  padding: 12px 20px;
   border: var(--border-thick);
   white-space: nowrap;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 6px;
-  min-width: 160px;
-}
-.stats-count-top {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
 }
 .sources-toggle-btn {
   font-family: var(--font);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: bold;
   text-transform: uppercase;
   letter-spacing: 1.5px;
-  padding: 4px 8px;
-  border: 1.5px solid rgba(255,255,255,0.5);
-  background: transparent;
-  color: var(--white);
+  padding: 4px 9px;
+  border: 2px solid var(--black);
+  background: var(--white);
+  color: var(--black);
   cursor: pointer;
-  transition: background 0.1s, border-color 0.1s;
+  transition: background 0.1s, color 0.1s;
   line-height: 1.4;
-  align-self: flex-start;
+  flex-shrink: 0;
 }
 .sources-toggle-btn:hover {
-  background: rgba(255,255,255,0.15);
-  border-color: var(--white);
+  background: var(--black);
+  color: var(--white);
 }
 .sources-toggle-btn.active {
-  background: var(--white);
-  color: var(--blue);
-  border-color: var(--white);
+  background: var(--black);
+  color: var(--white);
+  z-index: 1;
 }
 .stats-label {
   flex: 1;
@@ -149,9 +140,9 @@ a:hover { text-decoration: underline; }
   border: var(--border-thick);
   border-left: none;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  justify-content: center;
   gap: 8px;
-  flex-wrap: wrap;
 }
 .stats-accent {
   width: 40px;
@@ -195,20 +186,22 @@ a:hover { text-decoration: underline; }
 }
 .refresh-btn {
   font-family: var(--font);
-  font-size: 13px;
+  font-size: 10px;
   font-weight: bold;
-  padding: 3px 7px;
-  border: 2px solid rgba(255,255,255,0.6);
-  background: transparent;
-  color: var(--white);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  padding: 4px 9px;
+  border: 2px solid var(--black);
+  background: var(--white);
+  color: var(--black);
   cursor: pointer;
-  transition: border-color 0.1s, background 0.1s;
-  line-height: 1.2;
+  transition: background 0.1s, color 0.1s;
+  line-height: 1.4;
   flex-shrink: 0;
 }
 .refresh-btn:hover {
-  border-color: var(--white);
-  background: rgba(255,255,255,0.15);
+  background: var(--black);
+  color: var(--white);
 }
 .refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
@@ -270,6 +263,15 @@ a:hover { text-decoration: underline; }
 .src-ok    .src-icon { color: #2a8a2a; }
 .src-fail  .src-icon { color: var(--red); }
 .src-cache .src-icon { color: var(--grey); }
+.src-stale .src-icon { color: #c48a00; }
+
+.src-stale-age {
+  font-size: 9px;
+  color: #c48a00;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.source-item.active .src-stale-age { color: var(--yellow); }
 
 .src-name {
   flex: 1;
@@ -324,6 +326,7 @@ a:hover { text-decoration: underline; }
 .card-time {
   font-size: 11px;
   color: var(--grey);
+  margin-bottom: 6px;
 }
 .card-category {
   font-size: 9px;
@@ -488,10 +491,11 @@ a:hover { text-decoration: underline; }
 
   /* Stats bar */
   .stats-accent        { width: 24px; }
-  .stats-count         { min-width: 130px; font-size: 12px; padding: 10px 14px; gap: 6px; }
+  .stats-count         { font-size: 12px; padding: 10px 14px; }
   .stats-label         { padding: 8px 10px; font-size: 11px; }
   .filter-btn          { font-size: 9px; padding: 4px 7px; }
   .refresh-btn         { font-size: 11px; }
+  .sources-toggle-btn  { font-size: 11px; }
 
   /* Sources */
   .sources-detail      { column-count: 1; }
@@ -522,7 +526,7 @@ a:hover { text-decoration: underline; }
 
   /* Stats bar */
   .stats-accent        { width: 16px; }
-  .stats-count         { min-width: 110px; font-size: 11px; padding: 8px 10px; }
+  .stats-count         { font-size: 11px; padding: 8px 10px; }
 
   /* Footer — scale to ~30% of desktop */
   .footer-yellow       { width: 20px; }
