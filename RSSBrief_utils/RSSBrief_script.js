@@ -351,12 +351,14 @@ function deduplicateArticles(articles) {
 
 async function fetchFeedViaRss2Json(source) {
   const params = new URLSearchParams({
-    rss_url:   source.url,
-    count:     String(Math.max(CFG.maxPerSource * 3, 15)),
-    order_by:  "pubDate",
-    order_dir: "desc",
+    rss_url: source.url,
   });
-  if (CFG.rss2jsonApiKey) params.set("api_key", CFG.rss2jsonApiKey);
+  if (CFG.rss2jsonApiKey) {
+    params.set("api_key",   CFG.rss2jsonApiKey);
+    params.set("count",     String(Math.max(CFG.maxPerSource * 3, 15)));
+    params.set("order_by",  "pubDate");
+    params.set("order_dir", "desc");
+  }
 
   const res = await fetch(`https://api.rss2json.com/v1/api.json?${params}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -377,34 +379,55 @@ async function fetchFeedViaRss2Json(source) {
 }
 
 async function fetchFeedViaCorsProxy(source) {
-  const res = await fetch("https://corsproxy.io/?" + encodeURIComponent(source.url));
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  // Try corsproxy.io first (new URL format: /?url=), then allorigins fallback
+  const proxies = [
+    url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+    url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  ];
 
-  const text   = await res.text();
-  const parser = new DOMParser();
-  const doc    = parser.parseFromString(text, "application/xml");
-  const items  = Array.from(doc.querySelectorAll("item, entry"));
+  let lastError;
+  for (const makeUrl of proxies) {
+    try {
+      const res = await fetch(makeUrl(source.url));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-  return items.map(item => {
-    const get = sel => {
-      const el = item.querySelector(sel);
-      return el ? (el.textContent || "") : "";
-    };
-    const linkEl  = item.querySelector("link");
-    const link    = get("link") || linkEl?.getAttribute("href") || "";
-    const pubDate = get("pubDate") || get("published") || get("updated") || null;
+      const text   = await res.text();
+      const parser = new DOMParser();
+      const doc    = parser.parseFromString(text, "application/xml");
 
-    return {
-      title:       sanitizeTitle(get("title") || "Untitled", source.sanitize_headline),
-      link:        link.trim(),
-      pubDate:     pubDate ? pubDate.trim() : null,
-      description: get("description") || get("summary") || get("content") || "",
-      source:      source.name,
-      category:    source.category || "Uncategorized",
-      sourceUrl:   source.url,
-      headlineOnly: !!source.headline_only,
-    };
-  });
+      // Check for XML parse errors
+      const parseError = doc.querySelector("parsererror");
+      if (parseError) throw new Error("XML parse error");
+
+      const items  = Array.from(doc.querySelectorAll("item, entry"));
+      if (items.length === 0) throw new Error("No items found");
+
+      return items.map(item => {
+        const get = sel => {
+          const el = item.querySelector(sel);
+          return el ? (el.textContent || "") : "";
+        };
+        const linkEl  = item.querySelector("link");
+        const link    = get("link") || linkEl?.getAttribute("href") || "";
+        const pubDate = get("pubDate") || get("published") || get("updated") || null;
+
+        return {
+          title:       sanitizeTitle(get("title") || "Untitled", source.sanitize_headline),
+          link:        link.trim(),
+          pubDate:     pubDate ? pubDate.trim() : null,
+          description: get("description") || get("summary") || get("content") || "",
+          source:      source.name,
+          category:    source.category || "Uncategorized",
+          sourceUrl:   source.url,
+          headlineOnly: !!source.headline_only,
+        };
+      });
+    } catch (e) {
+      lastError = e;
+      continue;
+    }
+  }
+  throw lastError || new Error("All CORS proxies failed");
 }
 
 /**
@@ -659,6 +682,28 @@ function buildArticleCard(article, colorIndex) {
   const timeStr = formatDate(article.pubDate);
   const catCls  = categoryClass(article.category);
 
+  // Generous character limit for preview text
+  const PREVIEW_LIMIT = 280;
+  let previewHtml = "";
+  if (preview && !article.headlineOnly) {
+    const plainText = preview.replace(/<[^>]+>/g, "");
+    if (plainText.length > PREVIEW_LIMIT) {
+      // Truncate at word boundary from the plain text, but we need to
+      // truncate the rich HTML carefully. We walk the raw HTML and track
+      // visible-character count to find the cut point.
+      const cutIndex = findHtmlCutPoint(preview, PREVIEW_LIMIT);
+      const truncated = preview.slice(0, cutIndex).replace(/\s+$/, "");
+      const cardId = `card-preview-${colorIndex}-${Date.now()}`;
+      previewHtml = `
+        <div class="card-preview card-preview-truncated" id="${cardId}">
+          <span class="preview-short">${truncated}… <a href="javascript:void(0)" class="preview-expand-link" onclick="expandPreview('${cardId}')">Expand ▸</a></span>
+          <span class="preview-full" style="display:none">${preview} <a href="javascript:void(0)" class="preview-expand-link" onclick="collapsePreview('${cardId}')">Close ▴</a></span>
+        </div>`;
+    } else {
+      previewHtml = `<div class="card-preview">${preview}</div>`;
+    }
+  }
+
   return `
 <div class="article-card" style="animation-delay:${(colorIndex % 20) * 30}ms">
   <div class="card-accent ${escHtml(color)}"></div>
@@ -673,10 +718,51 @@ function buildArticleCard(article, colorIndex) {
         ${escHtml(article.title)}
       </a>
     </div>
-    ${(preview && !article.headlineOnly) ? `<div class="card-preview">${preview}</div>` : ""}
+    ${previewHtml}
     <a class="card-read" href="${escHtml(article.link)}" target="_blank" rel="noopener noreferrer">Read →</a>
   </div>
 </div>`.trim();
+}
+
+/**
+ * Walk an HTML string and find the character index where the visible
+ * (non-tag) character count reaches `limit`. Tries to land on a word
+ * boundary by rewinding to the last space within the final 30 chars.
+ */
+function findHtmlCutPoint(html, limit) {
+  let visible = 0;
+  let inTag = false;
+  let lastSpace = -1;
+  for (let i = 0; i < html.length; i++) {
+    if (html[i] === "<") { inTag = true; continue; }
+    if (html[i] === ">") { inTag = false; continue; }
+    if (!inTag) {
+      visible++;
+      if (html[i] === " ") lastSpace = i;
+      if (visible >= limit) {
+        // Prefer breaking at a word boundary
+        if (lastSpace > i - 30 && lastSpace > 0) return lastSpace;
+        return i;
+      }
+    }
+  }
+  return html.length;
+}
+
+function expandPreview(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.querySelector(".preview-short").style.display = "none";
+  el.querySelector(".preview-full").style.display = "inline";
+  el.classList.remove("card-preview-truncated");
+}
+
+function collapsePreview(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.querySelector(".preview-short").style.display = "inline";
+  el.querySelector(".preview-full").style.display = "none";
+  el.classList.add("card-preview-truncated");
 }
 
 /* ============================================================

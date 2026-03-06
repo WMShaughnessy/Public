@@ -369,6 +369,20 @@ a:hover { text-decoration: underline; }
   line-height: 1.6;
   margin-bottom: 16px;
 }
+.preview-expand-link {
+  color: var(--black);
+  font-size: 12px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.preview-expand-link:hover {
+  color: var(--black);
+  text-decoration: underline;
+}
 .preview-link {
   color: var(--blue);
   text-decoration: underline;
