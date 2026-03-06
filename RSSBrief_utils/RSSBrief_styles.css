@@ -49,7 +49,7 @@ a:hover { text-decoration: underline; }
 .header-row {
   display: flex;
   border: var(--border-thick);
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 .header-accent-left {
   width: 140px;
@@ -93,6 +93,7 @@ a:hover { text-decoration: underline; }
 .stats-bar {
   display: flex;
   margin-bottom: 4px;
+  margin-top: -4px;
 }
 .stats-count {
   background: var(--blue);
@@ -157,6 +158,7 @@ a:hover { text-decoration: underline; }
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  padding-top: 2px;
 }
 .controls-secondary {
   display: flex;
@@ -178,7 +180,7 @@ a:hover { text-decoration: underline; }
   transition: background 0.1s, color 0.1s;
   line-height: 1.4;
   margin-left: -2px;
-  margin-bottom: -2px;
+  margin-top: -2px;
   position: relative;
 }
 .filter-btn:first-child {
