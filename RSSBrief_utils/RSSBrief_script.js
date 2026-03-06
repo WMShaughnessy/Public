@@ -135,15 +135,38 @@ function stripHtml(html) {
     .trim();
 }
 
+/**
+ * Normalize a date string so Date() parses it correctly.
+ * rss2json returns dates like "2026-03-06 12:00:00" with no timezone —
+ * these are UTC but get parsed as local time, shifting all articles
+ * forward/backward depending on the user's timezone.
+ */
+function normalizeDate(dateStr) {
+  if (!dateStr) return null;
+  const s = dateStr.trim();
+  // If it looks like "YYYY-MM-DD HH:MM:SS" with no timezone info, treat as UTC
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
+    return s.replace(" ", "T") + "Z";
+  }
+  // "YYYY-MM-DDTHH:MM:SS" (ISO without tz) — also treat as UTC
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(s)) {
+    return s + "Z";
+  }
+  return s;
+}
+
 function relativeTime(isoStr) {
   if (!isoStr) return "";
   try {
     const dt = new Date(isoStr);
     const s = Math.floor((Date.now() - dt.getTime()) / 1000);
-    if (s < 0)     return "just now";
-    if (s < 60)    return `${s}s ago`;
-    if (s < 3600)  return `${Math.floor(s / 60)}m ago`;
-    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    if (s < -86400) return `in ${Math.floor(-s / 86400)}d`;
+    if (s < -3600)  return `in ${Math.floor(-s / 3600)}h`;
+    if (s < -60)    return `in ${Math.floor(-s / 60)}m`;
+    if (s < -5)     return "scheduled";
+    if (s < 60)     return "just now";
+    if (s < 3600)   return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400)  return `${Math.floor(s / 3600)}h ago`;
     return `${Math.floor(s / 86400)}d ago`;
   } catch { return ""; }
 }
@@ -369,7 +392,7 @@ async function fetchFeedViaRss2Json(source) {
   return (data.items || []).map(item => ({
     title:       sanitizeTitle(item.title || "Untitled", source.sanitize_headline),
     link:        item.link  || item.guid || "",
-    pubDate:     item.pubDate || null,
+    pubDate:     normalizeDate(item.pubDate) || null,
     description: item.description || item.content || "",
     source:      source.name,
     category:    source.category || "Uncategorized",
@@ -414,7 +437,7 @@ async function fetchFeedViaCorsProxy(source) {
         return {
           title:       sanitizeTitle(get("title") || "Untitled", source.sanitize_headline),
           link:        link.trim(),
-          pubDate:     pubDate ? pubDate.trim() : null,
+          pubDate:     pubDate ? normalizeDate(pubDate.trim()) : null,
           description: get("description") || get("summary") || get("content") || "",
           source:      source.name,
           category:    source.category || "Uncategorized",
@@ -889,6 +912,8 @@ async function loadAllFeeds(force = false) {
           latestPubDate: result.articles.reduce((latest, a) => {
             if (!a.pubDate) return latest;
             const t = new Date(a.pubDate).getTime();
+            // Ignore future-dated articles for staleness calculation
+            if (t > Date.now()) return latest;
             return (t > latest) ? t : latest;
           }, 0) || null,
         });
