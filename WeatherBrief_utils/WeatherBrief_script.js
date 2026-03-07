@@ -373,17 +373,17 @@ function buildHourly(w) {
     if (idx >= h.time.length) break;
     items += `<div class="hourly-item">
       <div class="hourly-time">${escHtml(hourLabel(h.time[idx], i === 0))}</div>
-      <div class="hourly-icon">${condIcon(h.weather_code[idx], 20)}</div>
+      <div class="hourly-icon">${condIcon(h.weather_code[idx], 28)}</div>
       <div class="hourly-temp">${cToF(h.temperature_2m[idx])}°</div>
-      <div class="hourly-sub">Feels ${cToF(h.apparent_temperature[idx])}°</div>
-      <div class="hourly-sub">${icon("drop", 12)} ${h.precipitation_probability[idx]}%</div>
-      <div class="hourly-sub">${icon("wind", 12)} ${kmhToMph(h.wind_speed_10m[idx])} mph</div>
-      <div class="hourly-sub dim">${icon("cloud", 12)} ${h.cloud_cover[idx]}%</div>
+      <div class="hourly-feels">Feels ${cToF(h.apparent_temperature[idx])}°</div>
+      <div class="hourly-sub">${icon("drop", 13)} ${h.precipitation_probability[idx]}%</div>
+      <div class="hourly-sub">${icon("wind", 13)} ${kmhToMph(h.wind_speed_10m[idx])} mph</div>
+      <div class="hourly-sub dim">${icon("cloud", 13)} ${h.cloud_cover[idx]}%</div>
     </div>`;
   }
-  return `<div class="wx-card"><div class="card-accent ${color}"></div>
+  return buildSection(icon("clock") + " Hourly Forecast (Next 24 Hours)") +
+    `<div class="wx-card"><div class="card-accent ${color}"></div>
     <div class="card-body-scroll">
-      ${buildTag(icon("clock", 14, "#fff") + " Hourly Forecast (Next 24 Hours)")}
       <div class="hourly-scroll">${items}</div>
     </div></div>`;
 }

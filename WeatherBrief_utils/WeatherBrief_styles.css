@@ -479,41 +479,51 @@ a:hover { text-decoration: underline; }
   overflow-x: auto;
   overflow-y: hidden;
   white-space: nowrap;
-  margin-top: 14px;
-  padding-bottom: 8px;
+  padding-bottom: 10px;
   -webkit-overflow-scrolling: touch;
 }
 .hourly-item {
   display: inline-block;
   text-align: center;
-  padding: 12px 8px;
+  padding: 16px 14px;
   border-right: 1px solid #e8e8e8;
   vertical-align: top;
-  min-width: 72px;
+  min-width: 92px;
+}
+.hourly-item:last-child {
+  border-right: none;
 }
 .hourly-time {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--black);
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
   font-weight: bold;
+  margin-bottom: 2px;
 }
 .hourly-icon {
-  padding: 6px 0;
+  padding: 8px 0;
 }
 .hourly-temp {
-  font-size: 18px;
+  font-size: 22px;
   font-weight: bold;
   color: var(--black);
+  line-height: 1.2;
+}
+.hourly-feels {
+  font-size: 12px;
+  color: var(--grey);
+  padding-top: 2px;
+  margin-bottom: 6px;
 }
 .hourly-sub {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--black);
-  padding-top: 2px;
+  padding-top: 3px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 3px;
 }
 .hourly-sub.dim {
   color: var(--grey);
@@ -868,7 +878,7 @@ a:hover { text-decoration: underline; }
   .fc-condition        { font-size: 13px; }
 
   /* Hourly */
-  .hourly-item         { min-width: 60px; padding: 10px 5px; }
+  .hourly-item         { min-width: 78px; padding: 12px 8px; }
 
   /* Footer */
   .footer-yellow       { width: 30px; }
