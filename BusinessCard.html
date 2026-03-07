@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Under Construction</title>
+  <title>Business Card</title>
   <style>
     :root {
       --red:    rgb(217, 33, 33);
@@ -12,60 +12,249 @@
       --black:  #1A1A1A;
       --white:  #FFFFFF;
       --grey:   #666666;
+      --border: 3px solid #1A1A1A;
       --border-thick: 4px solid #1A1A1A;
       --font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      --max-w: 660px;
     }
     *, *::before, *::after { box-sizing: border-box; }
-    body {
-      margin: 0;
-      padding: 0;
-      background: var(--white);
-      font-family: var(--font);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    html { scroll-behavior: smooth; }
+    body { margin:0; padding:0; background:var(--white); color:var(--black); font-family:var(--font); -webkit-text-size-adjust:100%; }
+    a { color:inherit; text-decoration:none; }
+
+    .page-wrap { width:100%; padding:30px 15px; }
+    .main-container { max-width:var(--max-w); margin:0 auto; width:100%; }
+
+    /* Card Wrapper */
+    .card-wrap { border:var(--border-thick); }
+
+    /* Header */
+    .header-row { display:flex; align-items:stretch; }
+    .header-accent-left { width:120px; flex-shrink:0; background:var(--blue); }
+    .header-body { flex:1; padding:22px 28px; border-left:var(--border-thick); background:var(--white); display:flex; flex-direction:column; justify-content:center; }
+    .header-title { font-size:34px; font-weight:bold; letter-spacing:-1px; line-height:1.1; color:var(--black); margin-bottom:5px; }
+    .header-subtitle { font-size:11px; color:var(--grey); text-transform:uppercase; letter-spacing:2px; }
+    .header-accent-right { width:50px; flex-shrink:0; background:var(--yellow); border-left:var(--border-thick); }
+
+    /* Divider */
+    .card-divider { height:4px; background:var(--black); }
+
+    /* Nav Bar */
+    .stats-bar { display:flex; }
+    .stats-accent-left { width:60px; flex-shrink:0; background:var(--red); }
+    .stats-body { flex:1; background:var(--white); border-left:var(--border-thick); border-right:var(--border-thick); padding:10px 12px; display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+    .nav-link {
+      font-family:var(--font); font-size:10px; font-weight:bold; text-transform:uppercase; letter-spacing:1.5px;
+      padding:4px 9px; border:2px solid var(--black); background:var(--white); color:var(--black);
+      cursor:pointer; transition:background 0.1s, color 0.1s; line-height:1.4;
+      text-decoration:none; display:inline-flex; align-items:center; gap:5px;
     }
-    .card {
-      display: flex;
-      max-width: 480px;
-      width: calc(100% - 30px);
+    .nav-link:hover { background:var(--black); color:var(--white); }
+    .nav-link svg { width:12px; height:12px; flex-shrink:0; }
+    .nav-link:hover svg { stroke:var(--white); }
+    .nav-link.filled-icon:hover svg { fill:var(--white); stroke:none; }
+    .nav-link.dl-btn { background:var(--blue); color:var(--white); border-color:var(--black); }
+    .nav-link.dl-btn:hover { background:var(--white); color:var(--blue); }
+    .nav-link.dl-btn:hover svg { stroke:var(--blue); }
+    .stats-accent-right { width:36px; flex-shrink:0; background:var(--black); }
+
+    /* Footer */
+    .footer-row { display:flex; }
+    .footer-yellow { width:50px; background:var(--yellow); flex-shrink:0; }
+    .footer-body { flex:1; background:var(--white); border-left:var(--border-thick); border-right:var(--border-thick); padding:16px 20px; }
+    .footer-msg { font-size:13px; color:var(--grey); line-height:1.5; }
+    .footer-red { width:50px; background:var(--red); flex-shrink:0; }
+    .footer-divider { width:4px; background:var(--black); flex-shrink:0; }
+    .footer-blue { width:30px; background:var(--blue); flex-shrink:0; }
+
+    /* Modal Overlay */
+    .modal-overlay {
+      position:fixed; inset:0; background:rgba(26,26,26,0.5); z-index:1000;
+      display:none; align-items:center; justify-content:center;
+      opacity:0; transition:opacity 0.2s ease;
     }
-    .accent {
-      width: 8px;
-      flex-shrink: 0;
-      background: var(--yellow);
-      border: var(--border-thick);
-      border-right: none;
+    .modal-overlay.show { display:flex; opacity:1; }
+
+    .modal-box {
+      background:var(--white); border:var(--border-thick); max-width:340px; width:90%;
+      transform:translateY(12px); transition:transform 0.2s ease;
     }
-    .body {
-      flex: 1;
-      border: var(--border-thick);
-      padding: 40px 30px;
+    .modal-overlay.show .modal-box { transform:translateY(0); }
+
+    .modal-header {
+      display:flex; align-items:stretch;
     }
-    h1 {
-      font-size: 28px;
-      font-weight: bold;
-      letter-spacing: -0.5px;
-      margin: 0 0 10px;
-      color: var(--black);
+    .modal-accent { width:10px; background:var(--yellow); flex-shrink:0; }
+    .modal-title-area {
+      flex:1; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;
+      border-bottom:var(--border);
     }
-    p {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-      color: var(--grey);
-      margin: 0;
+    .modal-title {
+      font-size:12px; font-weight:bold; text-transform:uppercase; letter-spacing:2px; color:var(--black);
+    }
+    .modal-close {
+      width:28px; height:28px; border:2px solid var(--black); background:var(--white); color:var(--black);
+      font-size:16px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center;
+      transition:background 0.1s, color 0.1s; line-height:1; padding:0;
+    }
+    .modal-close:hover { background:var(--black); color:var(--white); }
+
+    .modal-body { padding:20px; display:flex; flex-direction:column; gap:8px; }
+
+    .modal-btn {
+      font-family:var(--font); font-size:12px; font-weight:bold; text-transform:uppercase; letter-spacing:1.5px;
+      padding:12px 20px; border:var(--border); background:var(--black); color:var(--white);
+      cursor:pointer; transition:background 0.12s, color 0.12s, transform 0.1s; line-height:1.4;
+      text-align:left; width:100%; display:flex; align-items:center; gap:10px;
+    }
+    .modal-btn:hover { background:var(--white); color:var(--black); }
+    .modal-btn:active { transform:scale(0.98); }
+    .modal-btn.primary { background:var(--blue); }
+    .modal-btn.primary:hover { background:var(--white); color:var(--blue); }
+    .modal-btn svg { width:16px; height:16px; flex-shrink:0; }
+
+    /* Toast */
+    .toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--black); color:var(--white); font-family:var(--font); font-size:12px; font-weight:bold; text-transform:uppercase; letter-spacing:1.5px; padding:12px 24px; border:var(--border); opacity:0; pointer-events:none; transition:opacity 0.25s, transform 0.25s; z-index:1100; }
+    .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+    /* Responsive */
+    @media(max-width:600px){
+      .page-wrap{padding:12px 10px}
+      .header-accent-left{width:70px} .header-accent-right{width:30px}
+      .header-body{padding:16px 18px} .header-title{font-size:26px}
+      .header-subtitle{font-size:10px;letter-spacing:1.5px}
+      .nav-link{font-size:9px;padding:4px 7px}
+      .stats-accent-left{width:40px}
+    }
+    @media(max-width:380px){
+      .header-accent-left{width:44px} .header-accent-right{width:20px}
+      .header-body{padding:12px 14px} .header-title{font-size:22px}
+      .header-subtitle{font-size:9px;letter-spacing:1px}
+      .nav-link{font-size:8px;padding:3px 5px;gap:3px} .nav-link svg{width:10px;height:10px}
+      .stats-accent-left{width:28px} .stats-accent-right{width:24px}
     }
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="accent"></div>
-    <div class="body">
-      <h1><a href="index.html" style="color:inherit;text-decoration:none;">Under Construction</a></h1>
-      <p>Check back soon</p>
+<div class="page-wrap">
+  <div class="main-container">
+
+    <!-- CARD -->
+    <div class="card-wrap">
+
+      <!-- HEADER -->
+      <div class="header-row">
+        <div class="header-accent-left"></div>
+        <div class="header-body">
+          <div class="header-title"><a href="index.html" style="color:inherit;text-decoration:none;">William Shaughnessy</a></div>
+          <div class="header-subtitle">Paralegal · New York City, NY</div>
+        </div>
+        <div class="header-accent-right"></div>
+      </div>
+
+      <div class="card-divider"></div>
+
+      <!-- LINK BAR -->
+      <div class="stats-bar">
+        <div class="stats-accent-left"></div>
+        <div class="stats-body">
+          <a href="tel:7325356951" class="nav-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+            (732) 535-6951
+          </a>
+          <a href="mailto:w.shaughnessy2@outlook.com" class="nav-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            Email
+          </a>
+          <a href="About.html" class="nav-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            Resume
+          </a>
+          <a href="https://www.linkedin.com/in/wmshaughnessy" target="_blank" class="nav-link filled-icon">
+            <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+            LinkedIn
+          </a>
+          <button class="nav-link dl-btn" onclick="openModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Save
+          </button>
+        </div>
+        <div class="stats-accent-right"></div>
+      </div>
+
+      <div class="card-divider"></div>
+
+      <!-- FOOTER -->
+      <div class="footer-row">
+        <div class="footer-yellow"></div>
+        <div class="footer-body">
+          <span class="footer-msg">Thank you for visiting my site! Please reach out if you have any questions or would like to connect.</span>
+        </div>
+        <div class="footer-red"></div>
+        <div class="footer-divider"></div>
+        <div class="footer-blue"></div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<!-- DOWNLOAD MODAL -->
+<div class="modal-overlay" id="modal" onclick="closeModalOutside(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-accent"></div>
+      <div class="modal-title-area">
+        <span class="modal-title">Save Contact</span>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <button class="modal-btn primary" onclick="downloadVCard()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        vCard (.vcf)
+      </button>
+      <button class="modal-btn" onclick="downloadJSON()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        JSON
+      </button>
+      <button class="modal-btn" onclick="copyToClipboard()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        Copy Text
+      </button>
     </div>
   </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const contact={firstName:'William',lastName:'Shaughnessy',title:'Paralegal',phone:'(732) 535-6951',phoneTel:'+17325356951',email:'w.shaughnessy2@outlook.com',linkedin:'https://www.linkedin.com/in/wmshaughnessy',location:'New York City, New York'};
+
+  // Modal
+  function openModal(){document.getElementById('modal').classList.add('show')}
+  function closeModal(){document.getElementById('modal').classList.remove('show')}
+  function closeModalOutside(e){if(e.target===e.currentTarget)closeModal()}
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
+
+  // Toast
+  function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)}
+
+  function downloadVCard(){
+    const v=['BEGIN:VCARD','VERSION:3.0','N:'+contact.lastName+';'+contact.firstName+';;;','FN:'+contact.firstName+' '+contact.lastName,'TITLE:'+contact.title,'TEL;TYPE=CELL:'+contact.phoneTel,'EMAIL;TYPE=INTERNET:'+contact.email,'URL:'+contact.linkedin,'ADR;TYPE=WORK:;;'+contact.location+';;;;','END:VCARD'].join('\r\n');
+    const b=new Blob([v],{type:'text/vcard;charset=utf-8'}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=contact.firstName+'_'+contact.lastName+'.vcf';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);closeModal();showToast('vCard downloaded');
+  }
+
+  function downloadJSON(){
+    const d={name:contact.firstName+' '+contact.lastName,title:contact.title,phone:contact.phone,email:contact.email,linkedin:contact.linkedin,location:contact.location};
+    const b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=contact.firstName+'_'+contact.lastName+'.json';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);closeModal();showToast('JSON downloaded');
+  }
+
+  function copyToClipboard(){
+    const t=[contact.firstName+' '+contact.lastName,contact.title,contact.phone,contact.location,contact.email,contact.linkedin].join('\n');
+    navigator.clipboard.writeText(t).then(()=>{closeModal();showToast('Copied to clipboard')}).catch(()=>{const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');document.body.removeChild(a);closeModal();showToast('Copied to clipboard')});
+  }
+</script>
 </body>
 </html>
