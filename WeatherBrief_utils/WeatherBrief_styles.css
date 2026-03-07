@@ -62,14 +62,14 @@ a:hover { text-decoration: underline; }
   pointer-events: none;
 }
 .loading-card {
-  max-width: var(--max-w);
-  width: calc(100% - 30px);
   display: flex;
+  max-width: 480px;
+  width: calc(100% - 30px);
 }
 .loading-accent {
-  width: 6px;
+  width: 8px;
   flex-shrink: 0;
-  border: var(--border);
+  border: var(--border-thick);
   border-right: none;
   animation: accentCycle 3s ease-in-out infinite;
 }
@@ -80,31 +80,86 @@ a:hover { text-decoration: underline; }
 }
 .loading-body {
   flex: 1;
+  border: var(--border-thick);
+  padding: 40px 30px;
   background: var(--white);
-  border: var(--border);
-  padding: 28px 30px;
+  transition: padding 0.3s ease;
 }
-.loading-tag {
-  display: inline-block;
-  background: var(--black);
-  color: var(--white);
-  font-size: 10px;
+.loading-title {
+  font-size: 28px;
+  font-weight: bold;
+  letter-spacing: -0.5px;
+  margin: 0 0 10px;
+  color: var(--black);
+}
+.loading-status {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--grey);
+  margin: 0;
+  transition: margin 0.3s ease;
+}
+
+/* Zip code fallback — hidden until needed */
+.loading-zip-row {
+  display: flex;
+  gap: 0;
+  margin-top: 0;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.35s ease, opacity 0.3s ease 0.05s, margin-top 0.35s ease;
+}
+.loading-zip-row.visible {
+  max-height: 60px;
+  opacity: 1;
+  margin-top: 20px;
+}
+.zip-input {
+  flex: 1;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  padding: 10px 14px;
+  border: var(--border-thick);
+  border-right: none;
+  background: var(--white);
+  color: var(--black);
+  outline: none;
+}
+.zip-input::placeholder {
+  color: var(--grey);
+  font-weight: normal;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+}
+.zip-input:focus {
+  background: #fafafa;
+}
+.zip-go {
+  font-family: var(--font);
+  font-size: 12px;
   font-weight: bold;
   text-transform: uppercase;
   letter-spacing: 1.5px;
-  padding: 4px 10px;
+  padding: 10px 18px;
+  border: var(--border-thick);
+  background: var(--black);
+  color: var(--white);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
 }
-.loading-text {
-  font-size: 14px;
+.zip-go:hover {
+  background: var(--white);
   color: var(--black);
-  padding-top: 14px;
-  line-height: 1.6;
 }
-.loading-subtext {
-  font-size: 12px;
-  color: var(--grey);
-  padding-top: 6px;
-  line-height: 1.5;
+.zip-go:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* ---------- Header ---------- */
@@ -789,6 +844,10 @@ a:hover { text-decoration: underline; }
   .filter-btn          { font-size: 9px; padding: 4px 7px; }
   .refresh-btn         { font-size: 9px; padding: 4px 7px; }
 
+  /* Loading card */
+  .loading-body        { padding: 30px 20px; }
+  .loading-title       { font-size: 22px; }
+
   /* Cards */
   .card-body           { padding: 14px 16px; }
   .card-body-scroll    { padding: 14px 16px; }
@@ -833,6 +892,11 @@ a:hover { text-decoration: underline; }
   .stats-label         { padding: 8px 10px; }
   .filter-btn          { font-size: 8px; padding: 3px 6px; }
   .refresh-btn         { font-size: 8px; padding: 3px 6px; }
+
+  /* Loading card */
+  .loading-body        { padding: 24px 16px; }
+  .loading-title       { font-size: 18px; }
+  .loading-status      { font-size: 10px; }
 
   /* Forecast grid */
   .fc-grid             { grid-template-columns: 1fr; gap: 4px 0; font-size: 12px; }

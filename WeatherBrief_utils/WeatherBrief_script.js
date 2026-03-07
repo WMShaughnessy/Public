@@ -14,6 +14,7 @@
  *  - DST-safe hourly time labels via ISO timestamp parsing
  *  - SVG line/bar graphs for temperature, precipitation, wind
  *  - Last-updated timestamp in stats bar
+ *  - ZIP code fallback when geolocation is denied
  *  - Live refresh
  */
 
@@ -252,6 +253,19 @@ async function getAlerts(lat, lon) {
   } catch { return []; }
 }
 
+/**
+ * Geocode a US ZIP code via Open-Meteo's geocoding API.
+ * Returns { lat, lon, name, admin } or throws on failure.
+ */
+async function geocodeZip(zip) {
+  const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(zip)}&count=1&language=en&format=json&country_code=US`);
+  if (!r.ok) throw new Error("Geocoding request failed");
+  const d = await r.json();
+  if (!d.results || !d.results.length) throw new Error("ZIP code not found");
+  const place = d.results[0];
+  return { lat: place.latitude, lon: place.longitude, name: place.name || zip, admin: place.admin1 || "" };
+}
+
 /* ============================================================
    RENDER — Header & Stats
    ============================================================ */
@@ -380,9 +394,6 @@ function buildHourly(w) {
 
 let chartIdCounter = 0;
 
-/**
- * Chart layout constants (must match between build and interaction).
- */
 const CHART_W = 580, CHART_H = 160;
 const CHART_PL = 44, CHART_PR = 10, CHART_PT = 20, CHART_PB = 32;
 const CHART_PW = CHART_W - CHART_PL - CHART_PR;
@@ -404,14 +415,12 @@ function buildSvgChart(opts) {
 
   let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" class="wx-chart">`;
 
-  // Grid lines
   for (let j = 0; j <= 2; j++) {
     const gy = PT + (j / 2) * pH, gv = yMax - (j / 2) * yR;
     s += `<line x1="${PL}" y1="${gy}" x2="${W - PR}" y2="${gy}" stroke="#e0e0e0" stroke-width="1"/>`;
     s += `<text x="${PL - 6}" y="${gy + 4}" text-anchor="end" fill="#666" font-size="9" font-family="Helvetica Neue,Helvetica,Arial,sans-serif">${Math.round(gv)}${unit}</text>`;
   }
 
-  // Bars
   if (bars && bars.length === n) {
     const bMax = Math.max(...bars) || 1;
     const bW = Math.max(pW / n * 0.6, 3);
@@ -422,32 +431,22 @@ function buildSvgChart(opts) {
     }
   }
 
-  // Line + fill
   let pathD = "";
   for (let i = 0; i < n; i++) pathD += (i === 0 ? "M" : "L") + `${xp(i).toFixed(1)},${yp(values[i]).toFixed(1)}`;
   s += `<path d="${pathD}L${xp(n - 1).toFixed(1)},${(PT + pH)}L${xp(0).toFixed(1)},${(PT + pH)}Z" fill="${fillColor}" opacity="0.15"/>`;
   s += `<path d="${pathD}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
 
-  // Dots
   if (showDots) {
     const step = n <= 12 ? 1 : n <= 24 ? 2 : 3;
     for (let i = 0; i < n; i += step) s += `<circle cx="${xp(i).toFixed(1)}" cy="${yp(values[i]).toFixed(1)}" r="2.5" fill="${lineColor}" stroke="#fff" stroke-width="1"/>`;
   }
 
-  // X labels
   const ls = n <= 8 ? 1 : n <= 16 ? 2 : n <= 24 ? 3 : 4;
   for (let i = 0; i < n; i += ls) s += `<text x="${xp(i).toFixed(1)}" y="${H - 4}" text-anchor="middle" fill="#666" font-size="8" font-family="Helvetica Neue,Helvetica,Arial,sans-serif">${labels[i]}</text>`;
 
   return s + "</svg>";
 }
 
-/**
- * Wrap chart SVG(s) in an interactive container with tooltip, crosshair, and active dot.
- *
- * @param {string}     svgHtml       - The SVG HTML (or stacked SVGs in a chart-stack div)
- * @param {Object[]}   series        - Array of data series: [{ values, labels, color, unit, yMin, yMax, name }]
- * @param {string}     [legendHtml]  - Optional legend HTML
- */
 function buildInteractiveChart(svgHtml, series, legendHtml) {
   const id = `chart-${chartIdCounter++}`;
   const dataAttr = escHtml(JSON.stringify(series.map(s => ({
@@ -455,7 +454,6 @@ function buildInteractiveChart(svgHtml, series, legendHtml) {
     yMin: s.yMin, yMax: s.yMax, name: s.name || "",
   }))));
 
-  // One active dot per series
   const dots = series.map((s, i) =>
     `<div class="chart-dot-active" id="${id}-dot-${i}" style="background:${s.color}"></div>`
   ).join("");
@@ -468,10 +466,6 @@ function buildInteractiveChart(svgHtml, series, legendHtml) {
   </div>${legendHtml || ""}`;
 }
 
-/**
- * Bind mouse/touch listeners to all .chart-wrap elements.
- * Call this after rendering charts into the DOM.
- */
 function bindChartInteractions() {
   document.querySelectorAll(".chart-wrap").forEach(wrap => {
     const id = wrap.id;
@@ -484,54 +478,42 @@ function bindChartInteractions() {
 
     function show(clientX) {
       const rect = wrap.getBoundingClientRect();
-      const relX = clientX - rect.left;
-      const fracX = relX / rect.width;
-
-      // Map fracX to SVG coordinate space
+      const fracX = (clientX - rect.left) / rect.width;
       const svgX = fracX * CHART_W;
-      // Map svgX to data index
       const n = seriesData[0].values.length;
       const plotFrac = (svgX - CHART_PL) / CHART_PW;
       const idx = Math.round(plotFrac * (n - 1));
       if (idx < 0 || idx >= n) { hide(); return; }
 
-      // Crosshair position (percentage of wrapper width)
       const dataFracX = CHART_PL / CHART_W + (idx / (n - 1)) * (CHART_PW / CHART_W);
       const pxX = dataFracX * rect.width;
 
-      // Show crosshair
       xhair.style.left = pxX + "px";
       xhair.style.height = (CHART_PH / CHART_H * rect.height) + "px";
       xhair.style.top = (CHART_PT / CHART_H * rect.height) + "px";
       xhair.style.display = "block";
 
-      // Build tooltip text and position dots
       const lines = [];
       for (let si = 0; si < seriesData.length; si++) {
         const s = seriesData[si];
         const val = s.values[idx];
-        const label = s.labels[idx];
         const yR = (s.yMax - s.yMin) || 1;
         const yFrac = (val - s.yMin) / yR;
         const pxY = ((CHART_PT + CHART_PH - yFrac * CHART_PH) / CHART_H) * rect.height;
 
-        // Dot
         if (dots[si]) {
           dots[si].style.left = pxX + "px";
           dots[si].style.top = pxY + "px";
           dots[si].style.display = "block";
         }
-
         const prefix = s.name ? s.name + ": " : "";
         lines.push(`${prefix}${val}${s.unit}`);
       }
 
-      // Time label on first line
       const timeLabel = seriesData[0].labels[idx];
       tip.innerHTML = `<div style="font-size:9px;opacity:0.7;margin-bottom:2px">${escHtml(timeLabel)}</div>` + lines.join("<br>");
       tip.style.display = "block";
 
-      // Position tooltip — clamp to container edges
       let tipLeft = pxX;
       const tipRect = tip.getBoundingClientRect();
       const halfTip = tipRect.width / 2;
@@ -576,7 +558,6 @@ function buildGraphs(w) {
   const allTemps = temps.concat(feels);
   const tMin = Math.min(...allTemps) - 3, tMax = Math.max(...allTemps) + 3;
 
-  // Temperature — two overlapping charts with shared tooltip
   const tempSvg1 = buildSvgChart({ values: temps, labels: timeLabels, lineColor: "rgb(217,33,33)", fillColor: "rgb(217,33,33)", unit: "°", yMin: tMin, yMax: tMax });
   const tempSvg2 = buildSvgChart({ values: feels, labels: timeLabels, lineColor: "rgb(27,75,154)", fillColor: "rgb(27,75,154)", unit: "°", yMin: tMin, yMax: tMax, showDots: false });
   const tempLegend = `<div class="chart-legend"><span class="legend-item"><span class="legend-swatch" style="background:rgb(217,33,33)"></span> Temperature</span><span class="legend-item"><span class="legend-swatch" style="background:rgb(27,75,154)"></span> Feels Like</span></div>`;
@@ -590,7 +571,6 @@ function buildGraphs(w) {
   );
   const tempCard = buildCard(buildTag(icon("therm", 14, "#fff") + " Temperature (24h)"), tempChartHtml);
 
-  // Precipitation
   const precipSvg = buildSvgChart({ values: precipProb, labels: timeLabels, lineColor: "rgb(27,75,154)", fillColor: "rgb(27,75,154)", bars: precip, barColor: "rgba(27,75,154,0.3)", unit: "%", yMin: 0, yMax: 100 });
   const precipLegend = `<div class="chart-legend"><span class="legend-item"><span class="legend-swatch" style="background:rgb(27,75,154)"></span> Probability (%)</span><span class="legend-item"><span class="legend-swatch" style="background:rgba(27,75,154,0.3)"></span> Amount (bars)</span></div>`;
   const precipChartHtml = buildInteractiveChart(
@@ -600,7 +580,6 @@ function buildGraphs(w) {
   );
   const precipCard = buildCard(buildTag(icon("rain", 14, "#fff") + " Precipitation (24h)"), precipChartHtml);
 
-  // Wind
   const wMin = 0, wMax = Math.max(...wind) + 3 || 10;
   const windSvg = buildSvgChart({ values: wind, labels: timeLabels, lineColor: "#1A1A1A", fillColor: "#1A1A1A", unit: " mph", yMin: wMin, yMax: wMax });
   const windChartHtml = buildInteractiveChart(
@@ -770,8 +749,6 @@ function applyFilters() {
   }
 
   wrapper.innerHTML = html;
-
-  // Bind interactive chart tooltips after DOM is populated
   bindChartInteractions();
 }
 
@@ -779,19 +756,66 @@ function applyFilters() {
    LOADING UI
    ============================================================ */
 
-function updateLoading(text, sub) {
-  const lt = document.getElementById("loading-text");
-  const ls = document.getElementById("loading-subtext");
-  if (lt) lt.textContent = text;
-  if (ls) ls.textContent = sub;
+function updateLoading(status) {
+  const el = document.getElementById("loading-status");
+  if (el) el.textContent = status;
 }
+
 function hideLoading() {
   const ld = document.getElementById("loading-overlay");
   if (ld) { ld.classList.add("hidden"); setTimeout(() => ld.style.display = "none", 500); }
 }
+
 function freezeLoading() {
   const la = document.getElementById("loading-accent");
   if (la) { la.style.animation = "none"; la.style.background = "rgb(217, 33, 33)"; }
+}
+
+function showZipFallback(statusText) {
+  updateLoading(statusText);
+  freezeLoading();
+  const row = document.getElementById("loading-zip-row");
+  if (row) row.classList.add("visible");
+  // Focus the input after transition
+  setTimeout(() => {
+    const inp = document.getElementById("zip-input");
+    if (inp) inp.focus();
+  }, 400);
+}
+
+async function handleZipSubmit() {
+  const inp = document.getElementById("zip-input");
+  const btn = document.getElementById("zip-go");
+  if (!inp || !btn) return;
+
+  const zip = inp.value.trim();
+  if (!/^\d{5}$/.test(zip)) {
+    inp.style.borderColor = "rgb(217,33,33)";
+    inp.focus();
+    return;
+  }
+
+  inp.style.borderColor = "";
+  btn.disabled = true;
+  btn.textContent = "…";
+  updateLoading("Looking up " + zip);
+
+  // Re-enable accent cycling while fetching
+  const la = document.getElementById("loading-accent");
+  if (la) { la.style.animation = ""; la.style.background = ""; }
+
+  try {
+    const geo = await geocodeZip(zip);
+    writeGeoCache(geo.lat, geo.lon);
+    await fetchAndRender(geo.lat, geo.lon);
+  } catch (e) {
+    freezeLoading();
+    updateLoading("Could not find that ZIP code");
+    btn.disabled = false;
+    btn.textContent = "Go →";
+    inp.value = "";
+    inp.focus();
+  }
 }
 
 /* ============================================================
@@ -819,36 +843,46 @@ async function loadWeather(force = false) {
 
   // Geo cache — reuse coords on refresh
   const geo = readGeoCache();
-  if (geo) { await fetchAndRender(geo.lat, geo.lon); isLoading = false; if (refreshBtn) refreshBtn.disabled = false; return; }
+  if (geo) {
+    updateLoading("Fetching weather data");
+    await fetchAndRender(geo.lat, geo.lon);
+    isLoading = false; if (refreshBtn) refreshBtn.disabled = false; return;
+  }
 
   // Fresh geolocation
   if (!navigator.geolocation) {
-    updateLoading("Geolocation not supported", "Your browser does not support location services.");
-    freezeLoading(); isLoading = false; if (refreshBtn) refreshBtn.disabled = false; return;
+    showZipFallback("Location not supported — enter a ZIP code");
+    isLoading = false; if (refreshBtn) refreshBtn.disabled = false; return;
   }
+
+  updateLoading("Requesting location access");
 
   navigator.geolocation.getCurrentPosition(
     async (pos) => {
+      updateLoading("Fetching weather data");
       writeGeoCache(pos.coords.latitude, pos.coords.longitude);
       await fetchAndRender(pos.coords.latitude, pos.coords.longitude);
       isLoading = false; if (refreshBtn) refreshBtn.disabled = false;
     },
     () => {
-      updateLoading("Location access denied", "Please allow location access in your browser settings and reload.");
-      freezeLoading(); isLoading = false; if (refreshBtn) refreshBtn.disabled = false;
+      showZipFallback("Location denied — enter a ZIP code");
+      isLoading = false; if (refreshBtn) refreshBtn.disabled = false;
     }
   );
 }
 
 async function fetchAndRender(lat, lon) {
   try {
-    updateLoading("Fetching weather data...", "Location found. Loading your report.");
+    updateLoading("Fetching weather data");
     const [weather, loc] = await Promise.all([getWeather(lat, lon), getCityName(lat, lon)]);
     weatherData = weather; locationData = loc; alertsData = [];
     writeCache(weather, loc, []);
     renderHeader(); renderLocationBar(); renderLastUpdated(); renderFilters(); applyFilters(); hideLoading();
     getAlerts(lat, lon).then(alerts => { if (alerts && alerts.length > 0) { alertsData = alerts; writeCache(weather, loc, alerts); applyFilters(); } });
-  } catch (e) { updateLoading("Something went wrong", e.message); freezeLoading(); }
+  } catch (e) {
+    freezeLoading();
+    updateLoading("Something went wrong");
+  }
 }
 
 /* ============================================================
@@ -858,5 +892,12 @@ async function fetchAndRender(lat, lon) {
 document.addEventListener("DOMContentLoaded", () => {
   renderHeader(); renderFilters();
   document.getElementById("refresh-btn")?.addEventListener("click", () => loadWeather(true));
+
+  // ZIP code fallback handlers
+  const zipGo  = document.getElementById("zip-go");
+  const zipInp = document.getElementById("zip-input");
+  if (zipGo) zipGo.addEventListener("click", handleZipSubmit);
+  if (zipInp) zipInp.addEventListener("keydown", e => { if (e.key === "Enter") handleZipSubmit(); });
+
   loadWeather();
 });

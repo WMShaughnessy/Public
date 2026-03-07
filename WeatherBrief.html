@@ -12,10 +12,14 @@
 <div class="loading-overlay" id="loading-overlay">
   <div class="loading-card">
     <div class="loading-accent" id="loading-accent"></div>
-    <div class="loading-body">
-      <div class="loading-tag">Weather Brief</div>
-      <div class="loading-text" id="loading-text">Please allow location access to generate your weather report.</div>
-      <div class="loading-subtext" id="loading-subtext">Waiting for permission...</div>
+    <div class="loading-body" id="loading-body">
+      <h1 class="loading-title"><a href="index.html" style="color:inherit;text-decoration:none;">Weather Brief</a></h1>
+      <p class="loading-status" id="loading-status">Requesting location access</p>
+      <!-- Zip code fallback — hidden by default, revealed into the same card -->
+      <div class="loading-zip-row" id="loading-zip-row">
+        <input type="text" id="zip-input" class="zip-input" placeholder="Enter ZIP code" maxlength="5" inputmode="numeric" pattern="[0-9]*">
+        <button id="zip-go" class="zip-go">Go →</button>
+      </div>
     </div>
   </div>
 </div>
