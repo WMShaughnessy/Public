@@ -2,7 +2,6 @@
    Weather Brief — WeatherBrief_styles.css
    Brutalist editorial aesthetic: heavy borders, bold accents,
    clean typography, no decoration without purpose.
-   Mirrors RSS Brief design system.
    ============================================================ */
 
 /* ---------- Tokens ---------- */
@@ -101,7 +100,7 @@ a:hover { text-decoration: underline; }
   transition: margin 0.3s ease;
 }
 
-/* Zip code fallback — hidden until needed */
+/* Zip code fallback */
 .loading-zip-row {
   display: flex;
   gap: 0;
@@ -533,7 +532,7 @@ a:hover { text-decoration: underline; }
 .chart-wrap {
   position: relative;
   margin-top: 8px;
-  touch-action: none; /* prevent scroll while dragging on chart */
+  touch-action: none;
 }
 .wx-chart {
   width: 100%;
@@ -649,7 +648,6 @@ a:hover { text-decoration: underline; }
   color: var(--black);
   margin-top: 14px;
 }
-/* Subtle separator between each row of 3 items */
 .fc-grid-item:nth-child(n+4) {
   padding-top: 4px;
 }
@@ -745,6 +743,148 @@ a:hover { text-decoration: underline; }
   border-top: 1px solid #e0e0e0;
 }
 
+/* ============================================================
+   SATELLITE IMAGERY
+   ============================================================ */
+
+.sat-card-body {
+  padding: 20px 24px;
+}
+
+/* Control groups */
+.sat-controls-group {
+  margin-bottom: 14px;
+}
+.sat-control-label {
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--grey);
+  margin-bottom: 6px;
+}
+.sat-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Band and duration buttons — matching filter-btn style */
+.sat-band-btn,
+.sat-dur-btn {
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 4px 9px;
+  border: 2px solid var(--black);
+  background: var(--white);
+  color: var(--black);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.sat-band-btn:hover,
+.sat-band-btn.active {
+  background: var(--black);
+  color: var(--white);
+}
+.sat-dur-btn:hover,
+.sat-dur-btn.active {
+  background: var(--blue);
+  color: var(--white);
+  border-color: var(--blue);
+}
+
+/* Satellite image viewer */
+.sat-viewer {
+  background: #111;
+  border: var(--border);
+  overflow: hidden;
+  position: relative;
+  line-height: 0;
+}
+.sat-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 200px;
+  object-fit: contain;
+  background: #111;
+}
+
+/* Player bar */
+.sat-player-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--black);
+  border: var(--border);
+  border-top: none;
+  margin-bottom: 0;
+}
+.sat-ctrl-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: none;
+  border: 2px solid rgba(255,255,255,0.25);
+  color: var(--white);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.1s, background 0.1s;
+}
+.sat-ctrl-btn:hover {
+  border-color: var(--white);
+  background: rgba(255,255,255,0.1);
+}
+.sat-slider {
+  flex: 1;
+  height: 4px;
+  cursor: pointer;
+  accent-color: var(--red);
+  margin: 0 4px;
+}
+.sat-counter {
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: bold;
+  color: rgba(255,255,255,0.6);
+  letter-spacing: 1px;
+  white-space: nowrap;
+  min-width: 50px;
+  text-align: right;
+}
+
+/* Timestamp + link row */
+.sat-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0 0;
+}
+.sat-timestamp {
+  font-size: 11px;
+  color: var(--grey);
+  letter-spacing: 0.5px;
+}
+.sat-noaa-link {
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--blue);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-decoration: none;
+}
+.sat-noaa-link:hover {
+  text-decoration: underline;
+}
+
 /* ---------- Footer ---------- */
 .footer-row {
   display: flex;
@@ -834,11 +974,9 @@ a:hover { text-decoration: underline; }
 
 /* ---------- Responsive ---------- */
 
-/* ---- Tablet / large phone ---- */
 @media (max-width: 600px) {
   .page-wrap { padding: 12px 10px; }
 
-  /* Header */
   .header-accent-left  { width: 84px; }
   .header-accent-right { width: 36px; }
   .header-body         { padding: 14px 18px; }
@@ -846,7 +984,6 @@ a:hover { text-decoration: underline; }
   .header-date         { font-size: 10px; }
   .header-time         { font-size: 10px; }
 
-  /* Stats bar — stack */
   .stats-bar           { flex-direction: column; margin-top: 0; }
   .stats-count         { width: 100%; font-size: 12px; padding: 10px 14px; }
   .stats-label         { width: 100%; padding: 10px 12px; font-size: 11px; border-left: var(--border-thick); border-top: none; }
@@ -854,42 +991,42 @@ a:hover { text-decoration: underline; }
   .filter-btn          { font-size: 9px; padding: 4px 7px; }
   .refresh-btn         { font-size: 9px; padding: 4px 7px; }
 
-  /* Loading card */
   .loading-body        { padding: 30px 20px; }
   .loading-title       { font-size: 22px; }
 
-  /* Cards */
   .card-body           { padding: 14px 16px; }
   .card-body-scroll    { padding: 14px 16px; }
   .hero-body           { padding: 18px 16px; }
   .hero-temp           { font-size: 52px; letter-spacing: -2px; }
   .hero-temp-unit      { font-size: 28px; }
 
-  /* Forecast grid — single column on mobile for clean stacking */
   .fc-grid             { grid-template-columns: 1fr; gap: 4px 0; font-size: 13px; }
   .fc-grid-item:nth-child(n+4) { padding-top: 4px; }
   .fc-grid-item:nth-child(3n+4),
   .fc-grid-item:nth-child(3n+5),
   .fc-grid-item:nth-child(3n+6) { border-top: none; }
-  /* Separator every 3rd item in single column */
   .fc-grid-item:nth-child(4),
   .fc-grid-item:nth-child(7) { border-top: 1px solid #e8e8e8; }
   .fc-header           { flex-direction: column; align-items: flex-start; gap: 6px; }
   .fc-condition        { font-size: 13px; }
 
-  /* Hourly */
   .hourly-item         { min-width: 78px; padding: 12px 8px; }
 
-  /* Footer */
   .footer-yellow       { width: 30px; }
   .footer-red          { width: 30px; }
   .footer-blue         { width: 18px; }
   .footer-body         { padding: 10px 14px; }
+
+  /* Satellite responsive */
+  .sat-card-body       { padding: 14px 16px; }
+  .sat-band-btn,
+  .sat-dur-btn         { font-size: 9px; padding: 3px 7px; }
+  .sat-ctrl-btn        { width: 26px; height: 26px; }
+  .sat-counter         { font-size: 9px; min-width: 40px; }
+  .sat-player-bar      { padding: 6px 8px; gap: 4px; }
 }
 
-/* ---- Small phone ---- */
 @media (max-width: 380px) {
-  /* Header */
   .header-accent-left  { width: 50px; }
   .header-accent-right { width: 20px; }
   .header-body         { padding: 10px 12px; }
@@ -897,26 +1034,26 @@ a:hover { text-decoration: underline; }
   .header-date         { font-size: 9px; letter-spacing: 1px; }
   .header-time         { font-size: 9px; letter-spacing: 1px; }
 
-  /* Stats bar */
   .stats-count         { font-size: 11px; padding: 8px 10px; }
   .stats-label         { padding: 8px 10px; }
   .filter-btn          { font-size: 8px; padding: 3px 6px; }
   .refresh-btn         { font-size: 8px; padding: 3px 6px; }
 
-  /* Loading card */
   .loading-body        { padding: 24px 16px; }
   .loading-title       { font-size: 18px; }
   .loading-status      { font-size: 10px; }
 
-  /* Forecast grid */
   .fc-grid             { grid-template-columns: 1fr; gap: 4px 0; font-size: 12px; }
   .fc-grid-item        { gap: 3px; }
   .fc-precip-note      { font-size: 11px; }
 
-  /* Footer */
   .footer-yellow       { width: 20px; }
   .footer-red          { width: 20px; }
   .footer-blue         { width: 12px; }
   .footer-body         { padding: 8px 10px; }
   .footer-text         { font-size: 9px; }
+
+  /* Satellite responsive small */
+  .sat-band-btn,
+  .sat-dur-btn         { font-size: 8px; padding: 3px 5px; letter-spacing: 0.5px; }
 }

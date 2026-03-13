@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NWS Satellite &amp; Radar</title>
+  <link rel="stylesheet" href="css/nws-weather.css">
+  <script src="src/nws-core.js"></script>
+  <script src="src/nws-conditions.js"></script>
+  <script src="src/nws-forecast.js"></script>
+  <script src="src/nws-alerts.js"></script>
+  <script src="src/nws-satellite.js"></script>
+  <script src="src/nws-radar.js"></script>
+  <script src="src/nws-griddata.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; }
+    body { font-family: system-ui, sans-serif; background: #f4f4f4; color: #222; }
+    .bar { background: #fff; border-bottom: 1px solid #ddd; padding: 0.5rem 1rem; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; font-size: 0.85rem; }
+    .bar input { padding: 0.3rem 0.5rem; border: 1px solid #ccc; border-radius: 3px; width: 100px; font-size: 0.85rem; }
+    .bar button { padding: 0.3rem 0.6rem; border: 1px solid #ccc; border-radius: 3px; background: #fff; cursor: pointer; font-size: 0.85rem; }
+    .bar button:hover { background: #eee; }
+    .bar select { padding: 0.3rem 0.5rem; border: 1px solid #ccc; border-radius: 3px; font-size: 0.85rem; background: #fff; cursor: pointer; }
+    .bar .sep { color: #ccc; font-size: 0.8rem; user-select: none; }
+    #status { font-size: 0.72rem; color: #999; }
+    main { margin: 0 auto; padding: 1rem; }
+    h2 { font-size: 0.85rem; font-weight: 600; color: #555; margin: 1.5rem 0 0.4rem; border-bottom: 1px solid #ddd; padding-bottom: 0.25rem; }
+    h2:first-child { margin-top: 0; }
+    footer { text-align: center; padding: 2rem 1rem 1rem; font-size: 0.68rem; color: #bbb; }
+    footer a { color: #2563eb; }
+  </style>
+</head>
+<body>
+
+<div class="bar">
+  <button onclick="useGeo()">📍 My Location</button>
+  <span class="sep">|</span>
+  <select id="presets" onchange="usePreset(this.value)">
+    <option value="">Saved Locations…</option>
+    <optgroup label="New York City">
+      <option value="40.7128,-74.0060">Manhattan</option>
+      <option value="40.6501,-73.9496">Brooklyn</option>
+      <option value="40.7282,-73.7949">Queens</option>
+      <option value="40.8448,-73.8648">The Bronx</option>
+      <option value="40.5795,-74.1502">Staten Island</option>
+      <option value="40.7484,-73.9857">Midtown (ESB)</option>
+    </optgroup>
+    <optgroup label="New York State">
+      <option value="42.6526,-73.7562">Albany</option>
+      <option value="42.8864,-78.8784">Buffalo</option>
+      <option value="43.0481,-76.1474">Syracuse</option>
+      <option value="43.1610,-77.6109">Rochester</option>
+      <option value="41.7004,-73.9210">Poughkeepsie</option>
+      <option value="40.9312,-73.8987">Yonkers</option>
+      <option value="40.7580,-73.0155">Suffolk County (LI)</option>
+      <option value="43.2994,-73.6351">Glens Falls / ADK</option>
+      <option value="44.6995,-73.4529">Plattsburgh</option>
+    </optgroup>
+    <optgroup label="New Jersey">
+      <option value="40.7357,-74.1724">Newark</option>
+      <option value="40.7440,-74.0324">Jersey City</option>
+      <option value="40.4774,-74.2591">New Brunswick</option>
+      <option value="40.2206,-74.7630">Trenton</option>
+      <option value="39.9526,-75.1652">Camden / Philly area</option>
+      <option value="39.3643,-74.4229">Atlantic City</option>
+      <option value="40.8568,-74.2263">Morristown</option>
+      <option value="40.0583,-74.4057">Toms River / Shore</option>
+      <option value="41.0534,-74.1310">West Milford / NW NJ</option>
+    </optgroup>
+  </select>
+  <span class="sep">|</span>
+  <input id="lat" placeholder="Lat" value="40.7128">
+  <input id="lon" placeholder="Lon" value="-74.0060">
+  <button onclick="useManual()">Go</button>
+  <span id="status">enter location</span>
+</div>
+
+<main>
+  <h2 id="h-sector">Sector Satellite — Animated</h2>
+  <div id="sector-sat"></div>
+
+  <h2 id="h-radar">Radar</h2>
+  <div id="radar"></div>
+</main>
+
+<footer>
+  <a href="https://www.star.nesdis.noaa.gov/GOES/index.php" target="_blank">NOAA GOES</a> ·
+  <a href="https://radar.weather.gov" target="_blank">NWS Radar</a> ·
+  <a href="https://api.weather.gov" target="_blank">api.weather.gov</a>
+</footer>
+
+<script>
+  function status(m) { document.getElementById('status').textContent = m; }
+
+  function loadAll() {
+    var wfo = NWS.location.gridId.toUpperCase();
+    var sector = NWS.satellite.resolveSector(NWS.location.lat, NWS.location.lon);
+    var radar = NWS.location.radarStation;
+
+    document.getElementById('h-sector').textContent = sector.label + ' — Sector Satellite';
+    document.getElementById('h-radar').textContent = 'Radar — ' + radar;
+
+    // Clear previous content
+    document.getElementById('sector-sat').innerHTML = '';
+    document.getElementById('radar').innerHTML = '';
+
+    // Sector animated player with band tabs
+    NWS.satellite.renderBandSwitcher('#sector-sat', {
+      size: '1200x1200',
+      maxFrames: 30,
+      interval: 150
+    });
+
+    // Radar — show nearby stations with tabs
+    NWS.radar.renderMulti('#radar', { loop: true, maxStations: 5 });
+
+    status(wfo + ' · ' + sector.label + ' · ' + radar);
+  }
+
+  function useGeo() {
+    status('locating…');
+    NWS.locate().then(function () {
+      document.getElementById('lat').value = NWS.location.lat.toFixed(4);
+      document.getElementById('lon').value = NWS.location.lon.toFixed(4);
+      document.getElementById('presets').value = '';
+      loadAll();
+    }).catch(function (e) { status('error: ' + e.message); });
+  }
+
+  function useManual() {
+    var lat = parseFloat(document.getElementById('lat').value);
+    var lon = parseFloat(document.getElementById('lon').value);
+    if (isNaN(lat) || isNaN(lon)) { status('bad coords'); return; }
+    status('resolving…');
+    document.getElementById('presets').value = '';
+    NWS.resolvePoint(lat, lon).then(loadAll).catch(function (e) { status('error: ' + e.message); });
+  }
+
+  function usePreset(val) {
+    if (!val) return;
+    var parts = val.split(',');
+    var lat = parseFloat(parts[0]);
+    var lon = parseFloat(parts[1]);
+    document.getElementById('lat').value = lat.toFixed(4);
+    document.getElementById('lon').value = lon.toFixed(4);
+    status('resolving…');
+    NWS.resolvePoint(lat, lon).then(loadAll).catch(function (e) { status('error: ' + e.message); });
+  }
+</script>
+
+</body>
+</html>

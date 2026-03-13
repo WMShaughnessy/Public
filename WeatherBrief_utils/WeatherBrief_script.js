@@ -4,18 +4,8 @@
  * Fetches weather data from Open-Meteo + NWS Alerts + reverse geocoding,
  * renders a brutalist editorial weather report using div-based layout.
  *
- * Features:
- *  - localStorage caching with configurable TTL (default 15 min)
- *  - Cached geolocation — refresh reuses last-known coords
- *  - Section filter buttons (Hourly, Details, Forecast)
- *  - NWS weather advisories
- *  - Card accent color cycling (red → yellow → blue)
- *  - Responsive div-based layout (no tables)
- *  - DST-safe hourly time labels via ISO timestamp parsing
- *  - SVG line/bar graphs for temperature, precipitation, wind
- *  - Last-updated timestamp in stats bar
- *  - ZIP code fallback when geolocation is denied
- *  - Live refresh
+ * Now includes GOES satellite imagery with band switching and
+ * plain-language duration controls.
  */
 
 /* ============================================================
@@ -45,6 +35,64 @@ let colorCounter  = 0;
 let lastUpdatedAt = null;
 
 /* ============================================================
+   SATELLITE STATE
+   ============================================================ */
+
+let satCurrentBand     = 'GEOCOLOR';
+let satCurrentDuration = 'last-2-hours';  // default
+let satFrames          = [];
+let satPlaying         = false;
+let satTimer           = null;
+let satCurrentFrame    = 0;
+let satInterval        = 150; // ms between frames
+let satResolvedSector  = null;
+
+const GOES_CDN  = 'https://cdn.star.nesdis.noaa.gov';
+const GOES_PAGE = 'https://www.star.nesdis.noaa.gov/GOES';
+
+const SAT_BANDS = [
+  { id: 'GEOCOLOR',                label: 'GeoColor',         desc: 'True color day, infrared night' },
+  { id: 'DayNightCloudMicroCombo', label: 'Cloud Micro',      desc: 'Cloud reflectance and fog' },
+  { id: 'Sandwich',                label: 'Sandwich',         desc: 'Visible + IR combo' },
+  { id: 'AirMass',                 label: 'Air Mass',         desc: 'IR + water vapor composite' },
+  { id: 'FireTemperature',         label: 'Fire',             desc: 'Fire detection' },
+  { id: 'Dust',                    label: 'Dust',             desc: 'Dust detection' },
+  { id: '02',                      label: 'Visible',          desc: '0.64 µm red visible' },
+  { id: '09',                      label: 'Water Vapor',      desc: '6.9 µm mid-level WV' },
+  { id: '13',                      label: 'IR (10.3µm)',      desc: 'Longwave infrared' },
+  { id: '14',                      label: 'IR (11.2µm)',      desc: 'Longwave infrared' },
+];
+
+const SAT_DURATIONS = [
+  { id: 'last-1-hour',   label: 'Last hour',     maxFrames: 6 },
+  { id: 'last-2-hours',  label: 'Last 2 hours',  maxFrames: 12 },
+  { id: 'last-4-hours',  label: 'Last 4 hours',  maxFrames: 24 },
+  { id: 'last-6-hours',  label: 'Last 6 hours',  maxFrames: 36 },
+  { id: 'last-12-hours', label: 'Last 12 hours', maxFrames: 72 },
+  { id: 'max',           label: 'All available',  maxFrames: 120 },
+];
+
+const SAT_SECTORS = [
+  { id: 'ne',  sat: 'GOES19', p: 'G19', label: 'Northeast',          latMin: 37, latMax: 48, lonMin: -80,  lonMax: -66 },
+  { id: 'se',  sat: 'GOES19', p: 'G19', label: 'Southeast',          latMin: 24, latMax: 37, lonMin: -90,  lonMax: -74 },
+  { id: 'gl',  sat: 'GOES19', p: 'G19', label: 'Great Lakes',        latMin: 38, latMax: 50, lonMin: -95,  lonMax: -80 },
+  { id: 'umv', sat: 'GOES19', p: 'G19', label: 'Upper Miss. Valley', latMin: 38, latMax: 50, lonMin: -110, lonMax: -95 },
+  { id: 'sp',  sat: 'GOES19', p: 'G19', label: 'Southern Plains',    latMin: 25, latMax: 38, lonMin: -105, lonMax: -88 },
+  { id: 'smv', sat: 'GOES19', p: 'G19', label: 'Southern Miss. Val', latMin: 25, latMax: 38, lonMin: -92,  lonMax: -75 },
+  { id: 'nr',  sat: 'GOES19', p: 'G19', label: 'Northern Rockies',   latMin: 38, latMax: 50, lonMin: -117, lonMax: -103 },
+  { id: 'sr',  sat: 'GOES19', p: 'G19', label: 'Southern Rockies',   latMin: 25, latMax: 40, lonMin: -117, lonMax: -103 },
+  { id: 'pnw', sat: 'GOES18', p: 'G18', label: 'Pacific NW',         latMin: 42, latMax: 55, lonMin: -130, lonMax: -115 },
+  { id: 'psw', sat: 'GOES18', p: 'G18', label: 'Pacific SW',         latMin: 30, latMax: 42, lonMin: -130, lonMax: -115 },
+];
+
+function resolveSector(lat, lon) {
+  for (const s of SAT_SECTORS) {
+    if (lat >= s.latMin && lat <= s.latMax && lon >= s.lonMin && lon <= s.lonMax) return s;
+  }
+  return SAT_SECTORS[0]; // fallback to NE
+}
+
+/* ============================================================
    ICONS — clean inline SVGs
    ============================================================ */
 
@@ -71,6 +119,11 @@ const ICON_PATHS = {
   arrow:    '<path d="M12 19V5M5 12l7-7 7 7"/>',
   arrowDn:  '<path d="M12 5v14M19 12l-7 7-7-7"/>',
   chart:    '<path d="M18 20V10M12 20V4M6 20v-6"/>',
+  satellite:'<circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14"/>',
+  play:     '<polygon points="5,3 19,12 5,21"/>',
+  pause:    '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>',
+  skipBack: '<polygon points="19,20 9,12 19,4"/><line x1="5" y1="19" x2="5" y2="5"/>',
+  skipFwd:  '<polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/>',
 };
 
 function icon(name, size = 16, color = "currentColor") {
@@ -121,13 +174,11 @@ function fmtTime(iso) {
   return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
-/** DST-safe hour label from ISO timestamp. */
 function hourLabel(isoStr, isFirst) {
   if (isFirst) return "Now";
   return new Date(isoStr).toLocaleTimeString("en-US", { hour: "numeric" });
 }
 
-/** Find the first hourly index at or after the current hour. */
 function findHourlyStart(hourlyTimes) {
   const now = new Date();
   const currentHourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours());
@@ -253,10 +304,6 @@ async function getAlerts(lat, lon) {
   } catch { return []; }
 }
 
-/**
- * Geocode a US ZIP code via Open-Meteo's geocoding API.
- * Returns { lat, lon, name, admin } or throws on failure.
- */
 async function geocodeZip(zip) {
   const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(zip)}&count=1&language=en&format=json&country_code=US`);
   if (!r.ok) throw new Error("Geocoding request failed");
@@ -264,6 +311,198 @@ async function geocodeZip(zip) {
   if (!d.results || !d.results.length) throw new Error("ZIP code not found");
   const place = d.results[0];
   return { lat: place.latitude, lon: place.longitude, name: place.name || zip, admin: place.admin1 || "" };
+}
+
+/* ============================================================
+   SATELLITE — CDN directory fetch & frame parsing
+   ============================================================ */
+
+function satCdnDir(sector, band) {
+  return GOES_CDN + '/' + sector.sat + '/ABI/SECTOR/' + sector.id + '/' + band + '/';
+}
+
+function satViewerUrl(sector, band) {
+  return GOES_PAGE + '/sector_band.php?sat=' + sector.p + '&sector=' + sector.id + '&band=' + band + '&length=12';
+}
+
+/**
+ * Parse a CDN filename timestamp.
+ * Pattern: YYYYDDDHHMM_GOES19-ABI-ne-GEOCOLOR-1200x1200.jpg
+ */
+function parseFrameTimestamp(filename) {
+  const ts = filename.split('_')[0];
+  if (!ts || ts.length < 11) return null;
+  const yr  = parseInt(ts.slice(0, 4), 10);
+  const doy = parseInt(ts.slice(4, 7), 10);
+  const hr  = parseInt(ts.slice(7, 9), 10);
+  const mn  = ts.slice(9, 11);
+  const d = new Date(Date.UTC(yr, 0, doy, hr, parseInt(mn, 10)));
+  const month = d.getUTCMonth() + 1;
+  const day   = d.getUTCDate();
+  const year  = d.getUTCFullYear();
+  const h     = d.getUTCHours();
+  const ampm  = h >= 12 ? 'PM' : 'AM';
+  const h12   = h % 12 || 12;
+  return month + '/' + day + '/' + year + ' ' + h12 + ':' + mn + ' ' + ampm + ' UTC';
+}
+
+async function fetchSatFrames(sector, band, maxFrames) {
+  const size = '1200x1200';
+  const dirUrl = satCdnDir(sector, band);
+  const res = await fetch(dirUrl);
+  if (!res.ok) throw new Error('CDN directory fetch failed: ' + res.status);
+  const html = await res.text();
+
+  let regex = new RegExp('href="([^"]*' + size + '\\.jpg)"', 'gi');
+  let frames = [];
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    frames.push(dirUrl + match[1]);
+  }
+
+  // Fallback sizes
+  if (frames.length === 0) {
+    const fallbacks = ['600x600', '1800x1800', '2400x2400'];
+    for (const fb of fallbacks) {
+      const fbRegex = new RegExp('href="([^"]*' + fb + '\\.jpg)"', 'gi');
+      while ((match = fbRegex.exec(html)) !== null) {
+        frames.push(dirUrl + match[1]);
+      }
+      if (frames.length > 0) break;
+    }
+  }
+
+  frames.sort();
+  if (frames.length > maxFrames) {
+    frames = frames.slice(frames.length - maxFrames);
+  }
+  return frames;
+}
+
+/* ============================================================
+   SATELLITE — Player controls
+   ============================================================ */
+
+function satStop() {
+  satPlaying = false;
+  clearInterval(satTimer);
+  satTimer = null;
+}
+
+function satShowFrame(idx) {
+  if (!satFrames.length) return;
+  satCurrentFrame = idx;
+  const img = document.getElementById('sat-image');
+  const slider = document.getElementById('sat-slider');
+  const tsLabel = document.getElementById('sat-timestamp');
+  const counter = document.getElementById('sat-counter');
+  const playBtn = document.getElementById('sat-play-btn');
+
+  if (img) img.src = satFrames[idx];
+  if (slider) { slider.max = satFrames.length - 1; slider.value = idx; }
+  if (counter) counter.textContent = (idx + 1) + ' / ' + satFrames.length;
+
+  if (tsLabel) {
+    const fname = satFrames[idx].split('/').pop();
+    const ts = parseFrameTimestamp(fname);
+    tsLabel.textContent = ts || 'Frame ' + (idx + 1);
+  }
+
+  if (playBtn) {
+    playBtn.innerHTML = satPlaying ? icon('pause', 14, '#fff') : icon('play', 14, '#fff');
+  }
+}
+
+function satPlay() {
+  if (!satFrames.length) return;
+  satPlaying = true;
+  satTimer = setInterval(() => {
+    satCurrentFrame = (satCurrentFrame + 1) % satFrames.length;
+    satShowFrame(satCurrentFrame);
+  }, satInterval);
+  satShowFrame(satCurrentFrame);
+}
+
+function satPause() {
+  satStop();
+  satShowFrame(satCurrentFrame);
+}
+
+function satTogglePlay() {
+  if (satPlaying) satPause(); else satPlay();
+}
+
+function satStepBack() {
+  satPause();
+  const idx = satCurrentFrame - 1 < 0 ? satFrames.length - 1 : satCurrentFrame - 1;
+  satShowFrame(idx);
+}
+
+function satStepFwd() {
+  satPause();
+  const idx = (satCurrentFrame + 1) % satFrames.length;
+  satShowFrame(idx);
+}
+
+async function satLoad() {
+  const geo = readGeoCache();
+  if (!geo) return;
+
+  satStop();
+  satFrames = [];
+
+  const sector = resolveSector(geo.lat, geo.lon);
+  satResolvedSector = sector;
+  const dur = SAT_DURATIONS.find(d => d.id === satCurrentDuration) || SAT_DURATIONS[1];
+
+  // Update header
+  const headerEl = document.getElementById('sat-sector-label');
+  if (headerEl) headerEl.textContent = sector.label + ' Sector';
+
+  // Show loading state
+  const img = document.getElementById('sat-image');
+  const tsLabel = document.getElementById('sat-timestamp');
+  const counter = document.getElementById('sat-counter');
+  if (tsLabel) tsLabel.textContent = 'Loading frames…';
+  if (counter) counter.textContent = '';
+
+  // Show the latest static image while loading
+  if (img) {
+    img.src = satCdnDir(sector, satCurrentBand) + 'latest.jpg';
+    img.alt = 'Loading satellite…';
+  }
+
+  try {
+    satFrames = await fetchSatFrames(sector, satCurrentBand, dur.maxFrames);
+    if (satFrames.length === 0) {
+      if (tsLabel) tsLabel.textContent = 'No frames available';
+      return;
+    }
+    // Preload
+    satFrames.forEach(url => { const i = new Image(); i.src = url; });
+    satShowFrame(satFrames.length - 1);
+    satPlay();
+  } catch (e) {
+    if (tsLabel) tsLabel.textContent = 'Could not load — showing latest';
+    console.warn('[Satellite]', e);
+  }
+}
+
+function onBandChange(bandId) {
+  satCurrentBand = bandId;
+  // Update button states
+  document.querySelectorAll('.sat-band-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.band === bandId);
+  });
+  satLoad();
+}
+
+function onDurationChange(durId) {
+  satCurrentDuration = durId;
+  document.querySelectorAll('.sat-dur-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.dur === durId);
+  });
+  satLoad();
 }
 
 /* ============================================================
@@ -298,7 +537,7 @@ function renderLocationBar() {
    RENDER — Section Filters
    ============================================================ */
 
-const SECTIONS = ["Hourly", "Details", "Forecast"];
+const SECTIONS = ["Hourly", "Details", "Forecast", "Satellite"];
 
 function renderFilters() {
   const wrap = document.getElementById("filter-buttons");
@@ -713,6 +952,64 @@ function buildAlerts(alerts) {
 }
 
 /* ============================================================
+   RENDER — Satellite Section
+   ============================================================ */
+
+function buildSatellite() {
+  const color = nextColor();
+  const sector = satResolvedSector;
+  const sectorLabel = sector ? sector.label : '…';
+
+  // Band buttons
+  let bandBtns = '';
+  for (const b of SAT_BANDS) {
+    const isActive = b.id === satCurrentBand ? ' active' : '';
+    bandBtns += `<button class="sat-band-btn${isActive}" data-band="${b.id}" onclick="onBandChange('${b.id}')" title="${escHtml(b.desc)}">${escHtml(b.label)}</button>`;
+  }
+
+  // Duration buttons
+  let durBtns = '';
+  for (const d of SAT_DURATIONS) {
+    const isActive = d.id === satCurrentDuration ? ' active' : '';
+    durBtns += `<button class="sat-dur-btn${isActive}" data-dur="${d.id}" onclick="onDurationChange('${d.id}')">${escHtml(d.label)}</button>`;
+  }
+
+  // Viewer link
+  const viewUrl = sector ? satViewerUrl(sector, satCurrentBand) : '#';
+
+  return `<div class="wx-card"><div class="card-accent ${color}"></div><div class="card-body sat-card-body">
+    ${buildTag(icon("satellite", 14, "#fff") + ' <span id="sat-sector-label">' + escHtml(sectorLabel) + ' Sector</span> — GOES Satellite')}
+
+    <div class="sat-controls-group">
+      <div class="sat-control-label">Image type</div>
+      <div class="sat-btn-row">${bandBtns}</div>
+    </div>
+
+    <div class="sat-controls-group">
+      <div class="sat-control-label">Show me</div>
+      <div class="sat-btn-row">${durBtns}</div>
+    </div>
+
+    <div class="sat-viewer">
+      <img id="sat-image" class="sat-img" src="" alt="Satellite imagery loading…">
+    </div>
+
+    <div class="sat-player-bar">
+      <button class="sat-ctrl-btn" onclick="satStepBack()" title="Step back">${icon('skipBack', 14, '#fff')}</button>
+      <button class="sat-ctrl-btn" id="sat-play-btn" onclick="satTogglePlay()" title="Play/Pause">${icon('play', 14, '#fff')}</button>
+      <button class="sat-ctrl-btn" onclick="satStepFwd()" title="Step forward">${icon('skipFwd', 14, '#fff')}</button>
+      <input type="range" class="sat-slider" id="sat-slider" min="0" max="1" value="0" step="1" oninput="satPause(); satShowFrame(parseInt(this.value));">
+      <span class="sat-counter" id="sat-counter"></span>
+    </div>
+
+    <div class="sat-meta-row">
+      <span class="sat-timestamp" id="sat-timestamp">Loading…</span>
+      <a href="${viewUrl}" target="_blank" rel="noopener" class="sat-noaa-link">NOAA viewer →</a>
+    </div>
+  </div></div>`;
+}
+
+/* ============================================================
    RENDER — Apply filters
    ============================================================ */
 
@@ -721,6 +1018,9 @@ function applyFilters() {
   if (!weatherData) return;
   const wrapper = document.getElementById("content-wrapper");
   if (!wrapper) return;
+
+  // Stop any running satellite animation before rebuilding
+  satStop();
 
   resetColors();
   chartIdCounter = 0;
@@ -743,6 +1043,10 @@ function applyFilters() {
     html += buildSection(icon("sun") + " Solar &amp; UV");
     html += buildSolarUV(weatherData);
   }
+  if (showAll || activeSection === "Satellite") {
+    html += buildSection(icon("satellite") + " GOES Satellite Imagery");
+    html += buildSatellite();
+  }
   if (showAll || activeSection === "Forecast") {
     html += buildSection(icon("cal") + " 7-Day Forecast");
     html += buildForecast(weatherData);
@@ -750,6 +1054,11 @@ function applyFilters() {
 
   wrapper.innerHTML = html;
   bindChartInteractions();
+
+  // Load satellite if the section is visible
+  if (showAll || activeSection === "Satellite") {
+    satLoad();
+  }
 }
 
 /* ============================================================
@@ -776,7 +1085,6 @@ function showZipFallback(statusText) {
   freezeLoading();
   const row = document.getElementById("loading-zip-row");
   if (row) row.classList.add("visible");
-  // Focus the input after transition
   setTimeout(() => {
     const inp = document.getElementById("zip-input");
     if (inp) inp.focus();
@@ -800,7 +1108,6 @@ async function handleZipSubmit() {
   btn.textContent = "…";
   updateLoading("Looking up " + zip);
 
-  // Re-enable accent cycling while fetching
   const la = document.getElementById("loading-accent");
   if (la) { la.style.animation = ""; la.style.background = ""; }
 
@@ -830,26 +1137,27 @@ async function loadWeather(force = false) {
 
   if (force) { try { localStorage.removeItem(CACHE_KEY); } catch {} }
 
-  // Weather cache
   if (!force) {
     const cached = readCache();
     if (cached) {
       weatherData = cached.weather; locationData = cached.location;
       alertsData = cached.alerts || []; lastUpdatedAt = cached.savedAt;
+      // Resolve sector from geo cache
+      const geo = readGeoCache();
+      if (geo) satResolvedSector = resolveSector(geo.lat, geo.lon);
       renderHeader(); renderLocationBar(); renderLastUpdated(); renderFilters(); applyFilters(); hideLoading();
       isLoading = false; if (refreshBtn) refreshBtn.disabled = false; return;
     }
   }
 
-  // Geo cache — reuse coords on refresh
   const geo = readGeoCache();
   if (geo) {
+    satResolvedSector = resolveSector(geo.lat, geo.lon);
     updateLoading("Fetching weather data");
     await fetchAndRender(geo.lat, geo.lon);
     isLoading = false; if (refreshBtn) refreshBtn.disabled = false; return;
   }
 
-  // Fresh geolocation
   if (!navigator.geolocation) {
     showZipFallback("Location not supported — enter a ZIP code");
     isLoading = false; if (refreshBtn) refreshBtn.disabled = false; return;
@@ -861,6 +1169,7 @@ async function loadWeather(force = false) {
     async (pos) => {
       updateLoading("Fetching weather data");
       writeGeoCache(pos.coords.latitude, pos.coords.longitude);
+      satResolvedSector = resolveSector(pos.coords.latitude, pos.coords.longitude);
       await fetchAndRender(pos.coords.latitude, pos.coords.longitude);
       isLoading = false; if (refreshBtn) refreshBtn.disabled = false;
     },
@@ -874,6 +1183,7 @@ async function loadWeather(force = false) {
 async function fetchAndRender(lat, lon) {
   try {
     updateLoading("Fetching weather data");
+    satResolvedSector = resolveSector(lat, lon);
     const [weather, loc] = await Promise.all([getWeather(lat, lon), getCityName(lat, lon)]);
     weatherData = weather; locationData = loc; alertsData = [];
     writeCache(weather, loc, []);
@@ -893,7 +1203,6 @@ document.addEventListener("DOMContentLoaded", () => {
   renderHeader(); renderFilters();
   document.getElementById("refresh-btn")?.addEventListener("click", () => loadWeather(true));
 
-  // ZIP code fallback handlers
   const zipGo  = document.getElementById("zip-go");
   const zipInp = document.getElementById("zip-input");
   if (zipGo) zipGo.addEventListener("click", handleZipSubmit);

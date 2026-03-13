@@ -1,0 +1,161 @@
+:root {
+  --nws-font: system-ui, -apple-system, sans-serif;
+  --nws-radius: 4px;
+  --nws-text: #1a1a1a;
+  --nws-text-muted: #777;
+  --nws-text-faint: #aaa;
+  --nws-bg-card: #f8f8f8;
+  --nws-border: #e2e2e2;
+  --nws-accent: #2563eb;
+  --nws-ok: #15803d; --nws-ok-bg: #f0fdf4;
+  --nws-warn: #ca8a04; --nws-warn-bg: #fefce8;
+  --nws-danger: #dc2626; --nws-danger-bg: #fef2f2;
+}
+
+.nws-loading { padding: 0.75rem; color: var(--nws-text-muted); font-style: italic; font-family: var(--nws-font); }
+.nws-error { padding: 0.75rem 1rem; font-family: var(--nws-font); font-size: 0.85rem; color: var(--nws-danger); background: var(--nws-danger-bg); border-left: 3px solid var(--nws-danger); border-radius: var(--nws-radius); }
+
+/* ── Conditions ── */
+.nws-conditions { font-family: var(--nws-font); }
+.nws-cond-temp { font-size: 2.4rem; font-weight: 800; line-height: 1; }
+.nws-cond-tempc { font-size: 0.85rem; color: var(--nws-text-muted); }
+.nws-cond-desc { font-size: 1rem; font-weight: 500; }
+.nws-cond-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.4rem; margin-top: 0.5rem; }
+.nws-cond-cell { display: flex; flex-direction: column; padding: 0.4rem 0.6rem; background: var(--nws-bg-card); border-radius: var(--nws-radius); }
+.nws-cond-label { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--nws-text-faint); }
+.nws-cond-value { font-size: 0.95rem; font-weight: 600; }
+.nws-cond-meta { margin-top: 0.5rem; font-size: 0.72rem; color: var(--nws-text-faint); }
+
+/* ── Forecast ── */
+.nws-forecast { font-family: var(--nws-font); }
+.nws-forecast-strip { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 0.5rem; }
+.nws-fp { flex: 0 0 140px; padding: 0.6rem; border-radius: var(--nws-radius); border: 1px solid var(--nws-border); }
+.nws-fp-day { background: #eef3fb; } .nws-fp-night { background: #f3f2f8; }
+.nws-fp-name { font-size: 0.78rem; font-weight: 700; } .nws-fp-temp { font-size: 1.3rem; font-weight: 800; }
+.nws-fp-short { font-size: 0.75rem; line-height: 1.3; } .nws-fp-wind { font-size: 0.7rem; color: var(--nws-text-muted); }
+
+/* ── Hourly ── */
+.nws-hourly-strip { display: flex; gap: 0.3rem; overflow-x: auto; }
+.nws-hp { flex: 0 0 70px; text-align: center; padding: 0.5rem 0.3rem; background: var(--nws-bg-card); border-radius: var(--nws-radius); }
+
+/* ── Alerts ── */
+.nws-alert-clear { padding: 0.65rem; font-size: 0.85rem; color: var(--nws-ok); background: var(--nws-ok-bg); border-left: 3px solid var(--nws-ok); border-radius: var(--nws-radius); }
+.nws-alert { margin-bottom: 0.5rem; border-radius: var(--nws-radius); border-left: 4px solid var(--nws-text-muted); background: var(--nws-bg-card); }
+.nws-alert > summary { padding: 0.6rem 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; list-style: none; }
+.nws-alert > summary::-webkit-details-marker { display: none; }
+.nws-sev-extreme { border-left-color: #7f1d1d; background: #fef2f2; }
+.nws-sev-severe  { border-left-color: var(--nws-danger); background: var(--nws-danger-bg); }
+.nws-sev-moderate { border-left-color: #ea580c; background: #fff7ed; }
+.nws-sev-minor   { border-left-color: var(--nws-warn); background: var(--nws-warn-bg); }
+
+/* ── Satellite ── */
+.nws-satellite { font-family: var(--nws-font); }
+.nws-sat-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.3rem; font-size: 0.82rem; color: var(--nws-text-muted); }
+.nws-sat-header a { color: var(--nws-accent); text-decoration: none; font-weight: 500; }
+.nws-sat-header a:hover { text-decoration: underline; }
+
+.nws-sat-player { position: relative; }
+
+/* Show images at native resolution — no forced width stretching */
+.nws-sat-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--nws-radius);
+  background: #111;
+}
+
+/* Native size class — removes max-width constraint */
+.nws-sat-img-native {
+  max-width: none;
+  width: auto;
+}
+
+.nws-sat-controls {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  background: rgba(0,0,0,0.7); color: #ddd;
+  border-radius: 0 0 var(--nws-radius) var(--nws-radius);
+  font-size: 0.75rem;
+}
+.nws-sat-btn {
+  background: none; border: none; color: #fff; cursor: pointer;
+  font-size: 1rem; padding: 0 0.3rem; line-height: 1;
+}
+.nws-sat-btn:hover { color: var(--nws-accent); }
+.nws-sat-step-btn { font-size: 0.85rem; }
+.nws-sat-slider {
+  flex: 1; height: 4px; cursor: pointer;
+  accent-color: var(--nws-accent);
+}
+.nws-sat-timestamp {
+  font-size: 0.7rem; color: #aaa; white-space: nowrap; min-width: 160px; text-align: right;
+}
+
+/* ── Loop controls ── */
+.nws-sat-loop-controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+  margin-bottom: 0.4rem; padding: 0.35rem 0.5rem;
+  background: #f0f0f0; border: 1px solid var(--nws-border);
+  border-radius: var(--nws-radius); font-size: 0.75rem;
+}
+.nws-loop-label {
+  display: flex; align-items: center; gap: 0.3rem;
+  font-weight: 500; color: var(--nws-text-muted);
+}
+.nws-loop-input {
+  width: 60px; padding: 0.15rem 0.3rem;
+  border: 1px solid var(--nws-border); border-radius: 3px;
+  font-size: 0.75rem; font-family: var(--nws-font);
+}
+.nws-loop-select {
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--nws-border); border-radius: 3px;
+  font-size: 0.75rem; font-family: var(--nws-font);
+}
+.nws-loop-reload {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--nws-border); border-radius: 3px;
+  background: #fff; cursor: pointer;
+  font-size: 0.75rem; font-family: var(--nws-font); font-weight: 500;
+}
+.nws-loop-reload:hover { background: #e5e5e5; }
+
+/* Band tabs */
+.nws-band-tabs { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.5rem; }
+.nws-band-btn {
+  padding: 0.25rem 0.5rem; border: 1px solid var(--nws-border); border-radius: var(--nws-radius);
+  background: #fff; font-family: var(--nws-font); font-size: 0.72rem; font-weight: 500;
+  cursor: pointer; transition: background 0.1s;
+}
+.nws-band-btn:hover { background: #eee; }
+.nws-band-btn.active { background: #333; color: #fff; border-color: #333; }
+
+/* ── Radar ── */
+.nws-radar { font-family: var(--nws-font); }
+.nws-radar-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.3rem; font-size: 0.82rem; color: var(--nws-text-muted); }
+.nws-radar-header a { color: var(--nws-accent); text-decoration: none; font-weight: 500; }
+.nws-radar-img {
+  max-width: none;
+  width: auto;
+  height: auto;
+  display: block;
+  border-radius: var(--nws-radius);
+  background: #111;
+}
+
+/* Radar station tabs */
+.nws-radar-tabs { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.5rem; }
+.nws-radar-tab {
+  display: flex; flex-direction: column; align-items: flex-start;
+  padding: 0.3rem 0.55rem; border: 1px solid var(--nws-border); border-radius: var(--nws-radius);
+  background: #fff; font-family: var(--nws-font); font-size: 0.78rem; font-weight: 600;
+  cursor: pointer; transition: background 0.1s; line-height: 1.2;
+}
+.nws-radar-tab:hover { background: #eee; }
+.nws-radar-tab.active { background: #333; color: #fff; border-color: #333; }
+.nws-radar-tab-sub {
+  font-size: 0.62rem; font-weight: 400; color: var(--nws-text-faint);
+  white-space: nowrap;
+}
+.nws-radar-tab.active .nws-radar-tab-sub { color: #aaa; }
