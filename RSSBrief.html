@@ -60,19 +60,6 @@
 
 <!-- ============================================================
      CONFIGURATION
-     Edit window.BRIEF_CONFIG to customize the page.
-
-     title            — header/page title
-     totalArticles    — max articles shown after dedup
-     maxPerSource     — max articles per feed before dedup
-     cacheTTLMinutes  — how long to reuse cached data (default 15)
-     dedupThreshold   — title similarity 0–1 to treat as duplicate (default 0.55)
-     freshHours       — primary recency window in hours (default 6)
-     extendedHours    — backfill recency window in hours (default 14)
-     rss2jsonApiKey   — optional free key from https://rss2json.com/#rss_to_json_api
-     sources          — list of { name, url, category,
-                          headline_only (bool)   — omit preview, show title only
-                          sanitize_headline (str) — remove this string from every title }
      ============================================================ -->
 <script>
 window.BRIEF_CONFIG = {
@@ -83,7 +70,7 @@ window.BRIEF_CONFIG = {
   dedupThreshold: 0.55,
   freshHours: 6,
   extendedHours: 14,
-  rss2jsonApiKey: null, // get a free key at https://rss2json.com/#rss_to_json_api
+  rss2jsonApiKey: null,
 
   sources: [
     // ——— News ———
