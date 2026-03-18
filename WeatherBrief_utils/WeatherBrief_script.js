@@ -326,24 +326,39 @@ function satViewerUrl(sector, band) {
 }
 
 /**
- * Parse a CDN filename timestamp.
+ * Parse a CDN filename timestamp and convert to LOCAL time.
  * Pattern: YYYYDDDHHMM_GOES19-ABI-ne-GEOCOLOR-1200x1200.jpg
+ * Timestamp portion: YYYYDDDHHMM (year, day-of-year, hour, minute in UTC)
+ *
+ * Returns a local-time formatted string, e.g. "Mar 13, 2026 3:51 PM EDT"
  */
 function parseFrameTimestamp(filename) {
   const ts = filename.split('_')[0];
   if (!ts || ts.length < 11) return null;
+
   const yr  = parseInt(ts.slice(0, 4), 10);
   const doy = parseInt(ts.slice(4, 7), 10);
   const hr  = parseInt(ts.slice(7, 9), 10);
-  const mn  = ts.slice(9, 11);
-  const d = new Date(Date.UTC(yr, 0, doy, hr, parseInt(mn, 10)));
-  const month = d.getUTCMonth() + 1;
-  const day   = d.getUTCDate();
-  const year  = d.getUTCFullYear();
-  const h     = d.getUTCHours();
-  const ampm  = h >= 12 ? 'PM' : 'AM';
-  const h12   = h % 12 || 12;
-  return month + '/' + day + '/' + year + ' ' + h12 + ':' + mn + ' ' + ampm + ' UTC';
+  const mn  = parseInt(ts.slice(9, 11), 10);
+
+  // Build a UTC Date object from year + day-of-year + hour + minute
+  const utcDate = new Date(Date.UTC(yr, 0, doy, hr, mn));
+
+  // Format in the user's local timezone
+  try {
+    return utcDate.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    });
+  } catch {
+    // Fallback: basic local format
+    const local = utcDate.toLocaleString();
+    return local;
+  }
 }
 
 async function fetchSatFrames(sector, band, maxFrames) {
@@ -442,6 +457,60 @@ function satStepFwd() {
   satPause();
   const idx = (satCurrentFrame + 1) % satFrames.length;
   satShowFrame(idx);
+}
+
+/**
+ * Bind satellite slider with proper click-and-drag support.
+ * Uses 'input' event for real-time scrubbing during drag,
+ * and tracks drag state to prevent play from resuming mid-drag.
+ */
+let satDragging = false;
+
+function bindSatSlider() {
+  const slider = document.getElementById('sat-slider');
+  if (!slider) return;
+
+  // Remove any previous listeners by replacing the element
+  const fresh = slider.cloneNode(true);
+  slider.parentNode.replaceChild(fresh, slider);
+
+  // Real-time scrubbing while dragging
+  fresh.addEventListener('input', function () {
+    if (satPlaying) {
+      satStop();
+    }
+    satDragging = true;
+    const idx = parseInt(this.value);
+    if (!isNaN(idx) && satFrames.length > 0) {
+      satShowFrame(idx);
+    }
+  });
+
+  // Drag ended — mark as no longer dragging
+  fresh.addEventListener('change', function () {
+    satDragging = false;
+    const idx = parseInt(this.value);
+    if (!isNaN(idx) && satFrames.length > 0) {
+      satShowFrame(idx);
+    }
+  });
+
+  // Mouse/touch down — pause playback immediately for responsive feel
+  fresh.addEventListener('pointerdown', function () {
+    if (satPlaying) {
+      satStop();
+    }
+    satDragging = true;
+  });
+
+  fresh.addEventListener('pointerup', function () {
+    satDragging = false;
+  });
+
+  // Prevent touch scrolling while dragging the slider
+  fresh.addEventListener('touchstart', function (e) {
+    e.stopPropagation();
+  }, { passive: true });
 }
 
 async function satLoad() {
@@ -952,7 +1021,7 @@ function buildAlerts(alerts) {
 }
 
 /* ============================================================
-   RENDER — Satellite Section
+   RENDER — Satellite Section (redesigned scrubber)
    ============================================================ */
 
 function buildSatellite() {
@@ -998,7 +1067,9 @@ function buildSatellite() {
       <button class="sat-ctrl-btn" onclick="satStepBack()" title="Step back">${icon('skipBack', 14, '#fff')}</button>
       <button class="sat-ctrl-btn" id="sat-play-btn" onclick="satTogglePlay()" title="Play/Pause">${icon('play', 14, '#fff')}</button>
       <button class="sat-ctrl-btn" onclick="satStepFwd()" title="Step forward">${icon('skipFwd', 14, '#fff')}</button>
-      <input type="range" class="sat-slider" id="sat-slider" min="0" max="1" value="0" step="1" oninput="satPause(); satShowFrame(parseInt(this.value));">
+      <div class="sat-slider-wrap">
+        <input type="range" class="sat-slider" id="sat-slider" min="0" max="1" value="0" step="1">
+      </div>
       <span class="sat-counter" id="sat-counter"></span>
     </div>
 
@@ -1057,6 +1128,7 @@ function applyFilters() {
 
   // Load satellite if the section is visible
   if (showAll || activeSection === "Satellite") {
+    bindSatSlider();
     satLoad();
   }
 }

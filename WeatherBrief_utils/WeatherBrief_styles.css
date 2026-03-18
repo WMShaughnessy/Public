@@ -207,9 +207,10 @@ a:hover { text-decoration: underline; }
   border-left: var(--border-thick);
 }
 
-/* ---------- Stats Bar ---------- */
+/* ---------- Stats Bar (stacked layout at all sizes) ---------- */
 .stats-bar {
   display: flex;
+  flex-direction: column;
   margin-bottom: 4px;
 }
 .stats-count {
@@ -223,6 +224,7 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
 }
 .stats-label {
   flex: 1;
@@ -233,18 +235,15 @@ a:hover { text-decoration: underline; }
   letter-spacing: 1px;
   padding: 10px 14px;
   border: var(--border-thick);
-  border-left: none;
+  border-top: none;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 8px;
+  width: 100%;
 }
 .stats-accent {
-  width: 40px;
-  background: var(--black);
-  border: var(--border-thick);
-  border-left: none;
-  flex-shrink: 0;
+  display: none;
 }
 
 /* ---------- Controls ---------- */
@@ -744,7 +743,7 @@ a:hover { text-decoration: underline; }
 }
 
 /* ============================================================
-   SATELLITE IMAGERY
+   SATELLITE IMAGERY — Redesigned scrubber
    ============================================================ */
 
 .sat-card-body {
@@ -815,49 +814,124 @@ a:hover { text-decoration: underline; }
   background: #111;
 }
 
-/* Player bar */
+/* ── Redesigned Player Bar ── */
 .sat-player-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: 0;
+  height: 36px;
   background: var(--black);
   border: var(--border);
   border-top: none;
-  margin-bottom: 0;
 }
+
+/* Transport buttons — seamless inline */
 .sat-ctrl-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 100%;
   background: none;
-  border: 2px solid rgba(255,255,255,0.25);
+  border: none;
+  border-right: 1px solid rgba(255,255,255,0.12);
   color: var(--white);
   cursor: pointer;
   flex-shrink: 0;
-  transition: border-color 0.1s, background 0.1s;
+  transition: background 0.1s;
+  padding: 0;
 }
 .sat-ctrl-btn:hover {
-  border-color: var(--white);
   background: rgba(255,255,255,0.1);
 }
-.sat-slider {
-  flex: 1;
-  height: 4px;
-  cursor: pointer;
-  accent-color: var(--red);
-  margin: 0 4px;
+.sat-ctrl-btn:active {
+  background: rgba(255,255,255,0.18);
 }
+
+/* Slider track — generous touch target, slim visual track */
+.sat-slider-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+  cursor: pointer;
+  /* Expand the clickable zone vertically */
+  min-height: 36px;
+}
+.sat-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 3px;
+  background: rgba(255,255,255,0.2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  margin: 0;
+  /* Tall transparent padding for easier grab on touch */
+  padding: 10px 0;
+  background-clip: content-box;
+  box-sizing: content-box;
+  touch-action: none;
+}
+.sat-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  background: rgba(255,255,255,0.2);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.sat-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--white);
+  border: none;
+  cursor: grab;
+  margin-top: -5.5px;
+  transition: transform 0.1s, box-shadow 0.1s;
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.15);
+}
+.sat-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+  box-shadow: 0 0 0 5px rgba(255,255,255,0.2);
+}
+.sat-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.35);
+  box-shadow: 0 0 0 6px rgba(255,255,255,0.25);
+}
+.sat-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--white);
+  border: none;
+  cursor: grab;
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.15);
+}
+.sat-slider::-moz-range-thumb:active {
+  cursor: grabbing;
+}
+.sat-slider::-moz-range-track {
+  height: 3px;
+  background: rgba(255,255,255,0.2);
+  border: none;
+  border-radius: 2px;
+}
+
+/* Frame counter — right side */
 .sat-counter {
   font-family: var(--font);
   font-size: 10px;
   font-weight: bold;
-  color: rgba(255,255,255,0.6);
-  letter-spacing: 1px;
+  color: rgba(255,255,255,0.5);
+  letter-spacing: 0.5px;
   white-space: nowrap;
-  min-width: 50px;
+  padding: 0 12px 0 0;
+  min-width: 48px;
   text-align: right;
 }
 
@@ -984,10 +1058,8 @@ a:hover { text-decoration: underline; }
   .header-date         { font-size: 10px; }
   .header-time         { font-size: 10px; }
 
-  .stats-bar           { flex-direction: column; margin-top: 0; }
-  .stats-count         { width: 100%; font-size: 12px; padding: 10px 14px; }
-  .stats-label         { width: 100%; padding: 10px 12px; font-size: 11px; border-left: var(--border-thick); border-top: none; }
-  .stats-accent        { display: none; }
+  .stats-count         { font-size: 12px; padding: 10px 14px; }
+  .stats-label         { padding: 10px 12px; font-size: 11px; }
   .filter-btn          { font-size: 9px; padding: 4px 7px; }
   .refresh-btn         { font-size: 9px; padding: 4px 7px; }
 
@@ -1021,9 +1093,10 @@ a:hover { text-decoration: underline; }
   .sat-card-body       { padding: 14px 16px; }
   .sat-band-btn,
   .sat-dur-btn         { font-size: 9px; padding: 3px 7px; }
-  .sat-ctrl-btn        { width: 26px; height: 26px; }
-  .sat-counter         { font-size: 9px; min-width: 40px; }
-  .sat-player-bar      { padding: 6px 8px; gap: 4px; }
+  .sat-ctrl-btn        { width: 32px; }
+  .sat-counter         { font-size: 9px; min-width: 40px; padding-right: 8px; }
+  .sat-slider-wrap     { padding: 0 8px; }
+  .sat-player-bar      { height: 32px; }
 }
 
 @media (max-width: 380px) {
@@ -1056,4 +1129,6 @@ a:hover { text-decoration: underline; }
   /* Satellite responsive small */
   .sat-band-btn,
   .sat-dur-btn         { font-size: 8px; padding: 3px 5px; letter-spacing: 0.5px; }
+  .sat-ctrl-btn        { width: 28px; }
+  .sat-player-bar      { height: 28px; }
 }

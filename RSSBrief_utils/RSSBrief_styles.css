@@ -91,9 +91,10 @@ a:hover { text-decoration: underline; }
   border-left: var(--border-thick);
 }
 
-/* ---------- Stats Bar ---------- */
+/* ---------- Stats Bar (stacked layout at all sizes) ---------- */
 .stats-bar {
   display: flex;
+  flex-direction: column;
   margin-bottom: 4px;
 }
 .stats-count {
@@ -106,6 +107,7 @@ a:hover { text-decoration: underline; }
   white-space: nowrap;
   display: flex;
   align-items: center;
+  width: 100%;
 }
 .sources-toggle-btn {
   font-family: var(--font);
@@ -140,18 +142,15 @@ a:hover { text-decoration: underline; }
   letter-spacing: 1px;
   padding: 10px 14px;
   border: var(--border-thick);
-  border-left: none;
+  border-top: none;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 8px;
+  width: 100%;
 }
 .stats-accent {
-  width: 40px;
-  background: var(--black);
-  border: var(--border-thick);
-  border-left: none;
-  flex-shrink: 0;
+  display: none;
 }
 
 /* ---------- Controls ---------- */
@@ -522,10 +521,8 @@ a:hover { text-decoration: underline; }
   .header-date         { font-size: 10px; }
   .header-time         { font-size: 10px; }
 
-  .stats-bar           { flex-direction: column; margin-top: 0; }
-  .stats-count         { width: 100%; font-size: 12px; padding: 10px 14px; }
-  .stats-label         { width: 100%; padding: 10px 12px; font-size: 11px; border-left: var(--border-thick); border-top: none; }
-  .stats-accent        { display: none; }
+  .stats-count         { font-size: 12px; padding: 10px 14px; }
+  .stats-label         { padding: 10px 12px; font-size: 11px; }
   .filter-btn          { font-size: 9px; padding: 4px 7px; }
   .refresh-btn         { font-size: 9px; padding: 4px 7px; }
   .sources-toggle-btn  { font-size: 9px; padding: 4px 7px; }
