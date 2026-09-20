@@ -91,6 +91,12 @@
 <script>
   function status(m) { document.getElementById('status').textContent = m; }
 
+  // The satellite player runs on a frame timer. Clearing its container's
+  // markup does not stop that timer, so every location change used to leave
+  // another one running against detached nodes. Hold the controller and shut
+  // the old player down before building the next.
+  var satController = null;
+
   function loadAll() {
     var wfo = NWS.location.gridId.toUpperCase();
     var sector = NWS.satellite.resolveSector(NWS.location.lat, NWS.location.lon);
@@ -100,11 +106,12 @@
     document.getElementById('h-radar').textContent = 'Radar — ' + radar;
 
     // Clear previous content
+    if (satController) { satController.destroy(); satController = null; }
     document.getElementById('sector-sat').innerHTML = '';
     document.getElementById('radar').innerHTML = '';
 
     // Sector animated player with band tabs
-    NWS.satellite.renderBandSwitcher('#sector-sat', {
+    satController = NWS.satellite.renderBandSwitcher('#sector-sat', {
       size: '1200x1200',
       maxFrames: 30,
       interval: 150
