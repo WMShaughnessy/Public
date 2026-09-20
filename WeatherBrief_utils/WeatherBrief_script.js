@@ -280,6 +280,20 @@ function comfort(t, rh) {
    CACHING
    ============================================================ */
 
+/**
+ * A forecast we can actually render. Open-Meteo reports failures in the body
+ * ({error: true, reason}) alongside a non-2xx status, and an HTTP error page
+ * parses as JSON just as happily. Letting either through poisons the cache for
+ * the whole TTL: the next render reads it back, throws partway through, and
+ * leaves the opaque loading overlay up over an empty page -- still broken after
+ * the API recovers.
+ */
+function isUsableForecast(w) {
+  return !!(w && !w.error && w.current &&
+            w.hourly && Array.isArray(w.hourly.time) && w.hourly.time.length &&
+            w.daily  && Array.isArray(w.daily.time)  && w.daily.time.length);
+}
+
 /** Great-circle distance in km. */
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371, toRad = d => d * Math.PI / 180;
@@ -312,6 +326,7 @@ function readCache(lat, lon) {
     if (entry.version !== CACHE_VERSION) return null;
     if (Date.now() - entry.savedAt > CFG.cacheTTLMinutes * 60 * 1000) return null;
     if (!isSamePlace(entry, { lat, lon })) return null;
+    if (!isUsableForecast(entry.weather)) return null;
     return entry;
   } catch { return null; }
 }
@@ -387,7 +402,12 @@ async function getWeather(lat, lon) {
     forecast_days: 7,
   });
   const r = await fetch("https://api.open-meteo.com/v1/forecast?" + p);
-  return r.json();
+  if (!r.ok) throw new Error(`Open-Meteo responded ${r.status}`);
+  const d = await r.json().catch(() => null);
+  if (!isUsableForecast(d)) {
+    throw new Error((d && d.reason) || "Malformed forecast response");
+  }
+  return d;
 }
 
 async function getAlerts(lat, lon) {
@@ -618,13 +638,18 @@ function bindSatSlider() {
 }
 
 async function satLoad() {
-  const geo = readGeoCache();
-  if (!geo) return;
+  // The panel follows whichever location is on screen, so it must not demand a
+  // FRESH fix: the stale-fallback render, and every band or duration click made
+  // more than GEO_TTL_MINUTES after load, are exactly the moments there isn't
+  // one. Prefer the sector the render already resolved, and fall back to the
+  // last known position whatever its age.
+  const geo = readGeoCacheRaw();
+  const sector = satResolvedSector || (geo ? resolveSector(geo.lat, geo.lon) : null);
+  if (!sector) return;
 
   satStop();
   satFrames = [];
 
-  const sector = resolveSector(geo.lat, geo.lon);
   satResolvedSector = sector;
   const dur = SAT_DURATIONS.find(d => d.id === satCurrentDuration) || SAT_DURATIONS[1];
 
@@ -1465,10 +1490,17 @@ async function renderFor(geo, force) {
 
   const cached = readCache(geo.lat, geo.lon);
   if (cached) {
-    weatherData = cached.weather; locationData = cached.location;
-    alertsData = cached.alerts || []; lastUpdatedAt = cached.savedAt;
-    renderHeader(); renderLocationBar(); renderLastUpdated(); renderFilters(); applyFilters(); hideLoading();
-    return;
+    try {
+      weatherData = cached.weather; locationData = cached.location;
+      alertsData = cached.alerts || []; lastUpdatedAt = cached.savedAt;
+      renderHeader(); renderLocationBar(); renderLastUpdated(); renderFilters(); applyFilters(); hideLoading();
+      return;
+    } catch (e) {
+      // Whatever is stored cannot be drawn. Drop it and fetch again rather
+      // than leaving the overlay covering a half-built page.
+      console.warn("[WeatherBrief] Discarding unrenderable cache:", e.message);
+      clearCache();
+    }
   }
 
   updateLoading("Fetching weather data");
