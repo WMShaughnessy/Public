@@ -103,6 +103,7 @@ a:hover { text-decoration: underline; }
 /* Zip code fallback */
 .loading-zip-row {
   display: flex;
+  flex-direction: column;
   gap: 0;
   margin-top: 0;
   max-height: 0;
@@ -111,9 +112,31 @@ a:hover { text-decoration: underline; }
   transition: max-height 0.35s ease, opacity 0.3s ease 0.05s, margin-top 0.35s ease;
 }
 .loading-zip-row.visible {
-  max-height: 60px;
+  max-height: 120px;
   opacity: 1;
   margin-top: 20px;
+}
+.zip-entry {
+  display: flex;
+  gap: 0;
+}
+.use-location {
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 2px solid var(--black);
+  background: var(--white);
+  color: var(--black);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.use-location:hover {
+  background: var(--black);
+  color: var(--white);
 }
 .zip-input {
   flex: 1;
@@ -220,11 +243,44 @@ a:hover { text-decoration: underline; }
   font-weight: bold;
   padding: 12px 20px;
   border: var(--border-thick);
-  white-space: nowrap;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   width: 100%;
+}
+.loc-name { white-space: nowrap; }
+.loc-meta {
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 1.5px;
+  padding: 2px 6px;
+  border: 2px solid var(--white);
+  white-space: nowrap;
+}
+.loc-stale {
+  background: var(--yellow);
+  color: var(--black);
+  border-color: var(--black);
+}
+.loc-change {
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-left: auto;
+  padding: 3px 8px;
+  border: 2px solid var(--white);
+  background: transparent;
+  color: var(--white);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
+}
+.loc-change:hover {
+  background: var(--white);
+  color: var(--red);
 }
 .stats-label {
   flex: 1;
