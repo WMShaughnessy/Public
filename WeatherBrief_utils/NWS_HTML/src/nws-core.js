@@ -111,10 +111,18 @@ var NWS = NWS || {};
   };
 
   // ── Unit helpers ──────────────────────────────────────────────
-  ns.cToF   = function (c) { return c !== null && c !== undefined ? +(c * 9 / 5 + 32).toFixed(1) : null; };
-  ns.kmhToMph = function (kmh) { return kmh !== null ? +(kmh * 0.621371).toFixed(1) : null; };
-  ns.mToMi  = function (m) { return m !== null ? +(m / 1609.34).toFixed(1) : null; };
-  ns.paToHpa = function (pa) { return pa !== null ? +(pa / 100).toFixed(1) : null; };
-  ns.paToInHg = function (pa) { return pa !== null ? +(pa / 3386.39).toFixed(2) : null; };
+  // A missing reading must come back as null, not NaN: only cToF guarded
+  // undefined, so the others turned an absent value into the string "NaN",
+  // which then passed a !== null check and rendered as "NaN mph".
+  function _conv(v, fn, digits) {
+    if (v === null || v === undefined) return null;
+    var n = fn(Number(v));
+    return isFinite(n) ? +n.toFixed(digits) : null;
+  }
+  ns.cToF     = function (c)   { return _conv(c,   function (x) { return x * 9 / 5 + 32; }, 1); };
+  ns.kmhToMph = function (kmh) { return _conv(kmh, function (x) { return x * 0.621371; },   1); };
+  ns.mToMi    = function (m)   { return _conv(m,   function (x) { return x / 1609.34; },    1); };
+  ns.paToHpa  = function (pa)  { return _conv(pa,  function (x) { return x / 100; },        1); };
+  ns.paToInHg = function (pa)  { return _conv(pa,  function (x) { return x / 3386.39; },    2); };
 
 })(NWS);

@@ -9,13 +9,45 @@
   ns.conditions = {};
 
   /**
+   * Read a value out of an NWS measurement wrapper.
+   *
+   * Every observed property arrives as {value, unitCode, qualityControl}, and
+   * the API routinely reports an unavailable reading as {value: null}. Testing
+   * the wrapper alone says only that the property was mentioned, not that it
+   * was measured -- which is how one missing humidity reading used to throw
+   * partway through the parse and take every other field down with it.
+   */
+  function _val(m) {
+    if (!m) return null;
+    var v = m.value;
+    return (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) ? null : v;
+  }
+
+  function _round(v, digits) {
+    return v === null ? null : +v.toFixed(digits);
+  }
+
+  function _esc(str) {
+    return String(str === null || str === undefined ? '' : str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  /**
    * Fetch the latest observation.
    * @returns {Promise<Object>} parsed conditions object
    */
   ns.conditions.fetch = async function () {
     ns.ensureReady();
     const stationsData = await ns.apiFetch(ns.location.stationsUrl);
-    const stationId = stationsData.features[0].properties.stationIdentifier;
+    // Offshore points and parts of the territories resolve to no station at
+    // all. Say so, rather than dereferencing features[0] and reporting a
+    // TypeError as though the request had failed.
+    const stations = (stationsData && stationsData.features) || [];
+    if (!stations.length || !stations[0].properties) {
+      throw new Error('No observation station near this location');
+    }
+    const stationId = stations[0].properties.stationIdentifier;
     const obs = await ns.apiFetch(ns.API_BASE + '/stations/' + stationId + '/observations/latest');
     const p = obs.properties;
 
@@ -24,37 +56,33 @@
       station: stationId,
       description: p.textDescription || '',
       timestamp: p.timestamp,
-      temperature: p.temperature && p.temperature.value !== null
-        ? { c: p.temperature.value, f: ns.cToF(p.temperature.value) }
-        : null,
-      dewpoint: p.dewpoint && p.dewpoint.value !== null
-        ? { c: p.dewpoint.value, f: ns.cToF(p.dewpoint.value) }
-        : null,
-      humidity: p.relativeHumidity ? +p.relativeHumidity.value.toFixed(0) : null,
+      temperature: _temp(_val(p.temperature)),
+      dewpoint:    _temp(_val(p.dewpoint)),
+      humidity:    _round(_val(p.relativeHumidity), 0),
       wind: {
-        speedKmh: p.windSpeed ? p.windSpeed.value : null,
-        speedMph: ns.kmhToMph(p.windSpeed ? p.windSpeed.value : null),
-        direction: p.windDirection ? p.windDirection.value : null,
-        gustKmh: p.windGust ? p.windGust.value : null,
-        gustMph: ns.kmhToMph(p.windGust ? p.windGust.value : null),
+        speedKmh:  _val(p.windSpeed),
+        speedMph:  ns.kmhToMph(_val(p.windSpeed)),
+        direction: _val(p.windDirection),
+        gustKmh:   _val(p.windGust),
+        gustMph:   ns.kmhToMph(_val(p.windGust)),
       },
       barometer: {
-        pa: p.barometricPressure ? p.barometricPressure.value : null,
-        hpa: ns.paToHpa(p.barometricPressure ? p.barometricPressure.value : null),
-        inHg: ns.paToInHg(p.barometricPressure ? p.barometricPressure.value : null),
+        pa:   _val(p.barometricPressure),
+        hpa:  ns.paToHpa(_val(p.barometricPressure)),
+        inHg: ns.paToInHg(_val(p.barometricPressure)),
       },
       visibility: {
-        m: p.visibility ? p.visibility.value : null,
-        mi: ns.mToMi(p.visibility ? p.visibility.value : null),
+        m:  _val(p.visibility),
+        mi: ns.mToMi(_val(p.visibility)),
       },
-      heatIndex: p.heatIndex && p.heatIndex.value !== null
-        ? { c: p.heatIndex.value, f: ns.cToF(p.heatIndex.value) }
-        : null,
-      windChill: p.windChill && p.windChill.value !== null
-        ? { c: p.windChill.value, f: ns.cToF(p.windChill.value) }
-        : null,
+      heatIndex: _temp(_val(p.heatIndex)),
+      windChill: _temp(_val(p.windChill)),
     };
   };
+
+  function _temp(c) {
+    return c === null ? null : { c: c, f: ns.cToF(c) };
+  }
 
   /**
    * Render current conditions into a target element.
@@ -74,7 +102,7 @@
         '<div class="nws-cond-main">' +
           '<div class="nws-cond-temp">' + temp + '</div>' +
           '<div class="nws-cond-tempc">' + tempC + '</div>' +
-          '<div class="nws-cond-desc">' + c.description + '</div>' +
+          '<div class="nws-cond-desc">' + _esc(c.description) + '</div>' +
         '</div>' +
         '<div class="nws-cond-grid">' +
           _cell('Humidity', c.humidity !== null ? c.humidity + '%' : '—') +
@@ -86,9 +114,10 @@
           _cell('Heat Index', c.heatIndex ? c.heatIndex.f + '°F' : '—') +
           _cell('Wind Chill', c.windChill ? c.windChill.f + '°F' : '—') +
         '</div>' +
-        '<div class="nws-cond-meta">Station ' + c.station + ' · ' + new Date(c.timestamp).toLocaleString() + '</div>';
+        '<div class="nws-cond-meta">Station ' + _esc(c.station) + ' · ' +
+          (c.timestamp ? _esc(new Date(c.timestamp).toLocaleString()) : 'time unknown') + '</div>';
     } catch (err) {
-      el.innerHTML = '<div class="nws-error">' + err.message + '</div>';
+      el.innerHTML = '<div class="nws-error">' + _esc(err.message) + '</div>';
     }
   };
 

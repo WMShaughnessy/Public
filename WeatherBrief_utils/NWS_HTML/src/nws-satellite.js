@@ -265,6 +265,7 @@
     function play() {
       playing = true;
       btn.textContent = '⏸';
+      clearInterval(timer);   // never stack a second interval on the first
       timer = setInterval(function () {
         currentFrame = (currentFrame + 1) % frames.length;
         showFrame(currentFrame);
@@ -310,7 +311,12 @@
             band: band,
             maxFrames: newMaxFrames,
             interval: newInterval,
-          }));
+          })).then(function (ctrl) {
+            // Whoever owns this player is still holding the controller we are
+            // replacing. Hand them the new one, or they will later destroy a
+            // player that is already gone and leave this one running.
+            if (ctrl && typeof opts.onReplace === 'function') opts.onReplace(ctrl);
+          }).catch(function () {});
         });
       }
     }
@@ -343,14 +349,33 @@
 
     var container = el.querySelector('.nws-sat-player-container');
     var currentController = null;
+    var loadSeq = 0;
 
     function loadBand(bandId) {
-      if (currentController) currentController.destroy();
+      // renderAnimated is async, so switching bands while one is still
+      // loading left currentController null: nothing was destroyed, the
+      // pending player resolved into a variable the next switch overwrote,
+      // and its frame timer ran on for the life of the page.
+      var seq = ++loadSeq;
+      if (currentController) { currentController.destroy(); currentController = null; }
       container.innerHTML = '';
       var playerEl = document.createElement('div');
       container.appendChild(playerEl);
-      ns.satellite.renderAnimated(playerEl, Object.assign({}, opts, { band: bandId }))
-        .then(function (ctrl) { currentController = ctrl; });
+      ns.satellite.renderAnimated(playerEl, Object.assign({}, opts, {
+        band: bandId,
+        onReplace: function (ctrl) { if (seq === loadSeq) currentController = ctrl; },
+      })).then(function (ctrl) {
+        if (!ctrl) return;
+        // A newer band was asked for while this one loaded: it is already
+        // orphaned, so stop its timer rather than adopting it.
+        if (seq !== loadSeq) { ctrl.destroy(); return; }
+        currentController = ctrl;
+      }).catch(function (err) {
+        if (seq !== loadSeq) return;
+        container.innerHTML = '<div class="nws-error">' +
+          String((err && err.message) || 'Could not load imagery')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
+      });
     }
 
     el.querySelectorAll('.nws-band-btn').forEach(function (btn) {
@@ -362,6 +387,17 @@
     });
 
     loadBand(bands[0].id);
+
+    // Give the caller a way to shut this down. Without one, replacing the
+    // container's markup leaves the running player's timer with nothing to
+    // stop it.
+    return {
+      destroy: function () {
+        loadSeq++;                       // orphan anything still in flight
+        if (currentController) { currentController.destroy(); currentController = null; }
+        el.innerHTML = '';
+      },
+    };
   };
 
 })(NWS);

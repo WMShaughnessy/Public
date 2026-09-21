@@ -22,6 +22,16 @@ const CFG = Object.assign({}, DEFAULT_CONFIG, window.WEATHER_CONFIG || {});
 const CACHE_KEY     = "WeatherBrief_data";
 const GEO_CACHE_KEY = "WeatherBrief_geo";
 
+/* Location freshness.
+   A stored position is a record of where the device WAS, not where it is. Both
+   caches carry a timestamp and the coordinates they belong to, so travelling --
+   across town or across the country -- surfaces new data instead of the last
+   place's forecast. */
+const GEO_TTL_MINUTES        = 30;   // a device fix is re-checked after this
+const GEO_MANUAL_TTL_MINUTES = 720;  // a ZIP the user typed holds for 12 hours
+const GEO_MOVE_KM            = 25;   // a jump this far invalidates cached weather
+const CACHE_VERSION          = 2;    // bump to discard entries in the old shape
+
 /* ============================================================
    STATE
    ============================================================ */
@@ -33,6 +43,9 @@ let activeSection = null; // null = all
 let isLoading     = false;
 let colorCounter  = 0;
 let lastUpdatedAt = null;
+let geoIsStale    = false;  // rendering a fix we could not refresh
+let geoSource     = "gps";  // "gps" | "manual"
+let activeFetchId = 0;      // guards against a slow fetch for a place we left
 
 /* ============================================================
    SATELLITE STATE
@@ -46,6 +59,9 @@ let satTimer           = null;
 let satCurrentFrame    = 0;
 let satInterval        = 150; // ms between frames
 let satResolvedSector  = null;
+let satFramesKey       = null; // what satFrames were fetched for
+let satFramesAt        = 0;    // when they were fetched
+const SAT_FRAMES_TTL_MS = 10 * 60 * 1000; // GOES publishes roughly every 10 min
 
 const GOES_CDN  = 'https://cdn.star.nesdis.noaa.gov';
 const GOES_PAGE = 'https://www.star.nesdis.noaa.gov/GOES';
@@ -89,7 +105,14 @@ function resolveSector(lat, lon) {
   for (const s of SAT_SECTORS) {
     if (lat >= s.latMin && lat <= s.latMax && lon >= s.lonMin && lon <= s.lonMax) return s;
   }
-  return SAT_SECTORS[0]; // fallback to NE
+  // Outside every box (Alaska, Hawaii, abroad, or a gap between sectors): use
+  // the nearest sector centre rather than always falling back to the Northeast.
+  let best = SAT_SECTORS[0], bestD = Infinity;
+  for (const s of SAT_SECTORS) {
+    const d = haversineKm(lat, lon, (s.latMin + s.latMax) / 2, (s.lonMin + s.lonMax) / 2);
+    if (d < bestD) { bestD = d; best = s; }
+  }
+  return best;
 }
 
 /* ============================================================
@@ -179,13 +202,40 @@ function hourLabel(isoStr, isFirst) {
   return new Date(isoStr).toLocaleTimeString("en-US", { hour: "numeric" });
 }
 
-function findHourlyStart(hourlyTimes) {
-  const now = new Date();
-  const currentHourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours());
+/**
+ * Open-Meteo is queried with timezone=auto, so hourly and daily timestamps come
+ * back as naive local times for the FORECAST location -- "2026-09-20T14:00",
+ * with no offset. Indexing them with the device clock is wrong whenever the two
+ * zones disagree, which is exactly the case after flying across the country.
+ * These helpers resolve "now" in the forecast's own timezone instead.
+ */
+function locationNow(w) {
+  const off = (w && typeof w.utc_offset_seconds === "number") ? w.utc_offset_seconds : 0;
+  return new Date(Date.now() + off * 1000);
+}
+
+/** "YYYY-MM-DDTHH" at the forecast location, comparable to its time strings. */
+function locationHourStamp(w) {
+  return locationNow(w).toISOString().slice(0, 13);
+}
+
+/** Index of the first hourly slot at or after the current hour THERE. */
+function findHourlyStart(hourlyTimes, w) {
+  const cur = locationHourStamp(w);
   for (let i = 0; i < hourlyTimes.length; i++) {
-    if (new Date(hourlyTimes[i]) >= currentHourStart) return i;
+    if (String(hourlyTimes[i]).slice(0, 13) >= cur) return i;
   }
   return 0;
+}
+
+/** Render an absolute instant in the forecast location's timezone. */
+function fmtTimeZoned(iso, tz) {
+  if (!tz) return fmtTime(iso);
+  try {
+    return new Date(iso).toLocaleTimeString("en-US", {
+      hour: "numeric", minute: "2-digit", timeZone: tz,
+    });
+  } catch { return fmtTime(iso); }
 }
 
 function relativeTime(ts) {
@@ -233,33 +283,105 @@ function comfort(t, rh) {
    CACHING
    ============================================================ */
 
-function readCache() {
+/**
+ * A forecast we can actually render. Open-Meteo reports failures in the body
+ * ({error: true, reason}) alongside a non-2xx status, and an HTTP error page
+ * parses as JSON just as happily. Letting either through poisons the cache for
+ * the whole TTL: the next render reads it back, throws partway through, and
+ * leaves the opaque loading overlay up over an empty page -- still broken after
+ * the API recovers.
+ */
+function isUsableForecast(w) {
+  return !!(w && !w.error && w.current &&
+            w.hourly && Array.isArray(w.hourly.time) && w.hourly.time.length &&
+            w.daily  && Array.isArray(w.daily.time)  && w.daily.time.length);
+}
+
+/** Great-circle distance in km. */
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+/** True when two fixes are close enough to describe the same weather. */
+function isSamePlace(a, b) {
+  if (!a || !b) return false;
+  return haversineKm(a.lat, a.lon, b.lat, b.lon) <= GEO_MOVE_KM;
+}
+
+function geoTTLMinutes(entry) {
+  return entry && entry.source === "manual" ? GEO_MANUAL_TTL_MINUTES : GEO_TTL_MINUTES;
+}
+
+/**
+ * Cached weather belongs to the coordinates it was fetched for. Reading it for
+ * anywhere else misses, so a move can never render the previous place's
+ * forecast while the 15-minute data TTL is still running.
+ */
+function readCache(lat, lon) {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     const entry = JSON.parse(raw);
+    if (entry.version !== CACHE_VERSION) return null;
     if (Date.now() - entry.savedAt > CFG.cacheTTLMinutes * 60 * 1000) return null;
+    if (!isSamePlace(entry, { lat, lon })) return null;
+    if (!isUsableForecast(entry.weather)) return null;
     return entry;
   } catch { return null; }
 }
 
-function writeCache(weather, location, alerts) {
+function writeCache(weather, location, alerts, lat, lon) {
   try {
     const now = Date.now();
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: now, weather, location, alerts }));
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      version: CACHE_VERSION, savedAt: now, lat, lon, weather, location, alerts,
+    }));
     lastUpdatedAt = now;
   } catch (e) { console.warn("[WeatherBrief] Cache write failed:", e.message); }
 }
 
-function readGeoCache() {
+function clearCache() {
+  try { localStorage.removeItem(CACHE_KEY); } catch {}
+}
+
+function clearGeoCache() {
+  try { localStorage.removeItem(GEO_CACHE_KEY); } catch {}
+}
+
+/**
+ * The last known fix regardless of age -- used to measure how far the device
+ * has moved, and as a fallback when a fresh position cannot be obtained.
+ * Entries written before fixes were timestamped are discarded: their age is
+ * unknowable, and assuming they are current is what stranded travellers on the
+ * wrong coast.
+ */
+function readGeoCacheRaw() {
   try {
     const raw = localStorage.getItem(GEO_CACHE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const entry = JSON.parse(raw);
+    if (typeof entry.lat !== "number" || typeof entry.lon !== "number") return null;
+    if (typeof entry.savedAt !== "number") return null;
+    return entry;
   } catch { return null; }
 }
 
-function writeGeoCache(lat, lon) {
-  try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify({ lat, lon })); } catch {}
+/** The last known fix, but only while it is still fresh. */
+function readGeoCache() {
+  const entry = readGeoCacheRaw();
+  if (!entry) return null;
+  if (Date.now() - entry.savedAt > geoTTLMinutes(entry) * 60 * 1000) return null;
+  return entry;
+}
+
+function writeGeoCache(lat, lon, source = "gps") {
+  try {
+    localStorage.setItem(GEO_CACHE_KEY, JSON.stringify({ lat, lon, source, savedAt: Date.now() }));
+  } catch {}
 }
 
 /* ============================================================
@@ -283,7 +405,12 @@ async function getWeather(lat, lon) {
     forecast_days: 7,
   });
   const r = await fetch("https://api.open-meteo.com/v1/forecast?" + p);
-  return r.json();
+  if (!r.ok) throw new Error(`Open-Meteo responded ${r.status}`);
+  const d = await r.json().catch(() => null);
+  if (!isUsableForecast(d)) {
+    throw new Error((d && d.reason) || "Malformed forecast response");
+  }
+  return d;
 }
 
 async function getAlerts(lat, lon) {
@@ -397,6 +524,12 @@ async function fetchSatFrames(sector, band, maxFrames) {
 /* ============================================================
    SATELLITE — Player controls
    ============================================================ */
+
+/** Force the next satLoad() to re-fetch rather than repaint what it has. */
+function satInvalidate() {
+  satFramesKey = null;
+  satFramesAt  = 0;
+}
 
 function satStop() {
   satPlaying = false;
@@ -514,19 +647,39 @@ function bindSatSlider() {
 }
 
 async function satLoad() {
-  const geo = readGeoCache();
-  if (!geo) return;
+  // The panel follows whichever location is on screen, so it must not demand a
+  // FRESH fix: the stale-fallback render, and every band or duration click made
+  // more than GEO_TTL_MINUTES after load, are exactly the moments there isn't
+  // one. Prefer the sector the render already resolved, and fall back to the
+  // last known position whatever its age.
+  const geo = readGeoCacheRaw();
+  const sector = satResolvedSector || (geo ? resolveSector(geo.lat, geo.lon) : null);
+  if (!sector) return;
 
   satStop();
-  satFrames = [];
-
-  const sector = resolveSector(geo.lat, geo.lon);
   satResolvedSector = sector;
   const dur = SAT_DURATIONS.find(d => d.id === satCurrentDuration) || SAT_DURATIONS[1];
 
   // Update header
   const headerEl = document.getElementById('sat-sector-label');
   if (headerEl) headerEl.textContent = sector.label + ' Sector';
+
+  // applyFilters() rebuilds the whole page body, so it lands here on every
+  // filter click and again when the late alerts response arrives about a
+  // second after first paint. Re-fetching the CDN directory each time costs a
+  // request and visibly resets the animation, for imagery that has not
+  // changed. The frames depend only on sector, band and duration, so when
+  // those still match a recent fetch, repaint from what we already have.
+  const key = sector.id + '|' + satCurrentBand + '|' + dur.id;
+  if (key === satFramesKey && satFrames.length &&
+      Date.now() - satFramesAt < SAT_FRAMES_TTL_MS) {
+    satShowFrame(Math.min(satCurrentFrame, satFrames.length - 1));
+    satPlay();
+    return;
+  }
+
+  satFrames = [];
+  satFramesKey = null;
 
   // Show loading state
   const img = document.getElementById('sat-image');
@@ -542,11 +695,17 @@ async function satLoad() {
   }
 
   try {
-    satFrames = await fetchSatFrames(sector, satCurrentBand, dur.maxFrames);
+    const frames = await fetchSatFrames(sector, satCurrentBand, dur.maxFrames);
+    // A band or duration change while this was in flight has already started
+    // its own load; dropping this result keeps the two from fighting.
+    if (key !== sector.id + '|' + satCurrentBand + '|' + dur.id) return;
+    satFrames = frames;
     if (satFrames.length === 0) {
       if (tsLabel) tsLabel.textContent = 'No frames available';
       return;
     }
+    satFramesKey = key;
+    satFramesAt  = Date.now();
     // Preload
     satFrames.forEach(url => { const i = new Image(); i.src = url; });
     satShowFrame(satFrames.length - 1);
@@ -596,10 +755,26 @@ function renderLastUpdated() {
 
 function renderLocationBar() {
   const el = document.getElementById("location-label");
-  if (el && locationData) {
-    const locStr = `${locationData.name}${locationData.admin ? ", " + locationData.admin : ""}`;
-    el.innerHTML = `${icon("map", 14, "#fff")} ${escHtml(locStr).toUpperCase()}`;
+  if (!el || !locationData) return;
+
+  const locStr = `${locationData.name}${locationData.admin ? ", " + locationData.admin : ""}`;
+  let html = `${icon("map", 14, "#fff")} <span class="loc-name">${escHtml(locStr).toUpperCase()}</span>`;
+
+  // When the forecast is for another timezone, show that clock -- otherwise
+  // every hour on the page reads as if it were the device's.
+  const tz = weatherData && weatherData.timezone;
+  const deviceTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (tz && deviceTz && tz !== deviceTz) {
+    html += `<span class="loc-meta">${escHtml(fmtTimeZoned(new Date().toISOString(), tz)).toUpperCase()} LOCAL</span>`;
   }
+  // Say where the position came from: a traveller needs to know whether they
+  // are seeing their device's reading or a ZIP they typed in another city.
+  if (geoSource === "manual") html += `<span class="loc-meta">ZIP</span>`;
+  if (geoIsStale) html += `<span class="loc-meta loc-stale">APPROX</span>`;
+
+  html += `<button type="button" class="loc-change" id="loc-change">Change</button>`;
+  el.innerHTML = html;
+  document.getElementById("loc-change")?.addEventListener("click", showLocationPrompt);
 }
 
 /* ============================================================
@@ -673,7 +848,7 @@ function buildHero(w) {
 
 function buildHourly(w) {
   const h = w.hourly;
-  const startIdx = findHourlyStart(h.time);
+  const startIdx = findHourlyStart(h.time, w);
   const color = nextColor();
   let items = "";
   for (let i = 0; i < 24; i++) {
@@ -849,7 +1024,7 @@ function bindChartInteractions() {
 
 function buildGraphs(w) {
   const h = w.hourly;
-  const startIdx = findHourlyStart(h.time);
+  const startIdx = findHourlyStart(h.time, w);
   const count = Math.min(24, h.time.length - startIdx);
   const temps = [], feels = [], precip = [], precipProb = [], wind = [], timeLabels = [];
 
@@ -905,7 +1080,7 @@ function buildGraphs(w) {
 
 function buildCurrentConditions(w) {
   const c = w.current, d = w.daily, h = w.hourly;
-  const hi = new Date().getHours(), dp = dewPt(c.temperature_2m, c.relative_humidity_2m);
+  const hi = findHourlyStart(h.time, w), dp = dewPt(c.temperature_2m, c.relative_humidity_2m);
 
   const tempCard = buildCard(buildTag(icon("therm", 14, "#fff") + " Temperature &amp; Comfort"),
     buildDataRow(icon("therm"), "Temperature", `${cToF(c.temperature_2m)}°F`, true) +
@@ -945,7 +1120,7 @@ function buildCurrentConditions(w) {
 }
 
 function buildSolarUV(w) {
-  const d = w.daily, h = w.hourly, hi = new Date().getHours();
+  const d = w.daily, h = w.hourly, hi = findHourlyStart(h.time, w);
   const sr = new Date(d.sunrise[0]), ss = new Date(d.sunset[0]), dayMin = (ss - sr) / 1000 / 60;
   const uvNow = h.uv_index[hi] !== undefined ? h.uv_index[hi] : d.uv_index_max[0];
 
@@ -1006,7 +1181,8 @@ function buildAlerts(alerts) {
   let items = "";
   for (const a of alerts) {
     const sc = (a.severity === "Extreme" || a.severity === "Severe") ? "extreme" : a.severity === "Moderate" ? "moderate" : "";
-    const tr = (a.onset && a.expires) ? `${fmtTime(a.onset)} – ${fmtTime(a.expires)}` : "";
+    const tz = weatherData && weatherData.timezone;
+    const tr = (a.onset && a.expires) ? `${fmtTimeZoned(a.onset, tz)} – ${fmtTimeZoned(a.expires, tz)}` : "";
     items += `<div class="advisory-item">
       <div class="advisory-severity ${sc}">${escHtml(a.severity)} · ${escHtml(a.urgency)}</div>
       <div class="advisory-event">${icon("alert", 14)} ${escHtml(a.event)}</div>
@@ -1142,9 +1318,26 @@ function updateLoading(status) {
   if (el) el.textContent = status;
 }
 
+let hideLoadingTimer = null;
+
 function hideLoading() {
   const ld = document.getElementById("loading-overlay");
-  if (ld) { ld.classList.add("hidden"); setTimeout(() => ld.style.display = "none", 500); }
+  if (!ld) return;
+  ld.classList.add("hidden");
+  clearTimeout(hideLoadingTimer);
+  hideLoadingTimer = setTimeout(() => ld.style.display = "none", 500);
+}
+
+/** Bring the overlay back so the user can change location mid-session. */
+function showLoading() {
+  const ld = document.getElementById("loading-overlay");
+  if (!ld) return;
+  clearTimeout(hideLoadingTimer);
+  ld.style.display = "";
+  void ld.offsetWidth;            // replay the transition
+  ld.classList.remove("hidden");
+  const la = document.getElementById("loading-accent");
+  if (la) { la.style.animation = ""; la.style.background = ""; }
 }
 
 function freezeLoading() {
@@ -1155,12 +1348,41 @@ function freezeLoading() {
 function showZipFallback(statusText) {
   updateLoading(statusText);
   freezeLoading();
+  revealZipRow();
+}
+
+function revealZipRow() {
   const row = document.getElementById("loading-zip-row");
   if (row) row.classList.add("visible");
+  const btn = document.getElementById("zip-go");
+  if (btn) { btn.disabled = false; btn.textContent = "Go →"; }
   setTimeout(() => {
     const inp = document.getElementById("zip-input");
     if (inp) inp.focus();
   }, 400);
+}
+
+/**
+ * Opened from the location bar. Lets the user name a place, or hand control
+ * back to the device -- without this there is no way to correct a stored
+ * location short of clearing site data.
+ */
+function showLocationPrompt() {
+  showLoading();
+  updateLoading("Enter a ZIP code, or use your current location");
+  revealZipRow();
+}
+
+/** Forget the stored place entirely and ask the device where we are now. */
+async function useDeviceLocation() {
+  clearGeoCache();
+  clearCache();
+  geoIsStale = false;
+  showLoading();
+  updateLoading("Requesting location access");
+  const row = document.getElementById("loading-zip-row");
+  if (row) row.classList.remove("visible");
+  await loadWeather(true);
 }
 
 async function handleZipSubmit() {
@@ -1185,7 +1407,12 @@ async function handleZipSubmit() {
 
   try {
     const geo = await geocodeZip(zip);
-    writeGeoCache(geo.lat, geo.lon);
+    // A different place invalidates whatever forecast is cached.
+    if (!isSamePlace(readGeoCacheRaw(), geo)) clearCache();
+    writeGeoCache(geo.lat, geo.lon, "manual");
+    geoSource  = "manual";
+    geoIsStale = false;
+    satResolvedSector = resolveSector(geo.lat, geo.lon);
     await fetchAndRender(geo.lat, geo.lon);
   } catch (e) {
     freezeLoading();
@@ -1201,67 +1428,138 @@ async function handleZipSubmit() {
    MAIN
    ============================================================ */
 
+/**
+ * Ask the browser where we are.
+ *
+ * maximumAge: 0 rejects the browser's own cached fix -- a stale position is the
+ * whole problem we are solving. The timeout matters just as much: without one,
+ * a permission prompt that is never answered leaves the overlay spinning on
+ * "Requesting location access" with no way through to the ZIP entry.
+ */
+function requestPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject({ code: 0 }); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude, source: "gps" }),
+      err => reject(err || { code: 2 }),
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 0 }
+    );
+  });
+}
+
+/**
+ * Decide where to render, then render there.
+ *
+ * A stored fix is trusted only while it is fresh; past that the device is asked
+ * again, so a session resumed on the other side of the country reports the
+ * other side of the country. An expired fix survives only as a fallback for
+ * when that request fails, and it is labelled as approximate when used.
+ */
 async function loadWeather(force = false) {
   if (isLoading) return;
   isLoading = true;
   const refreshBtn = document.getElementById("refresh-btn");
   if (refreshBtn) refreshBtn.disabled = true;
 
-  if (force) { try { localStorage.removeItem(CACHE_KEY); } catch {} }
+  try {
+    const stored = readGeoCacheRaw();   // last known, however old
+    const fresh  = readGeoCache();      // last known, only while still valid
 
-  if (!force) {
-    const cached = readCache();
-    if (cached) {
+    // A typed ZIP is a deliberate choice: hold it until it expires or the user
+    // hands control back via "Use my location".
+    if (fresh && fresh.source === "manual") {
+      geoSource = "manual"; geoIsStale = false;
+      await renderFor(fresh, force);
+      return;
+    }
+
+    // A recent device fix is good enough to skip the permission round-trip.
+    if (fresh && !force) {
+      geoSource = fresh.source || "gps"; geoIsStale = false;
+      await renderFor(fresh, false);
+      return;
+    }
+
+    updateLoading(stored ? "Checking your location" : "Requesting location access");
+
+    let pos;
+    try {
+      pos = await requestPosition();
+    } catch (err) {
+      if (stored) {
+        // Could not refresh. Show the last known place rather than stranding
+        // the user, but mark it so a stale reading is never mistaken for a
+        // current one.
+        geoSource = stored.source || "gps"; geoIsStale = true;
+        await renderFor(stored, force);
+        return;
+      }
+      showZipFallback(err && err.code === 1
+        ? "Location denied — enter a ZIP code"
+        : "Location unavailable — enter a ZIP code");
+      return;
+    }
+
+    // Far enough that the cached forecast no longer describes here.
+    if (stored && !isSamePlace(stored, pos)) clearCache();
+
+    geoSource = "gps"; geoIsStale = false;
+    writeGeoCache(pos.lat, pos.lon, "gps");
+    await renderFor(pos, force);
+  } finally {
+    isLoading = false;
+    if (refreshBtn) refreshBtn.disabled = false;
+  }
+}
+
+/** Render a set of coordinates, reusing cached weather only if it matches. */
+async function renderFor(geo, force) {
+  satResolvedSector = resolveSector(geo.lat, geo.lon);
+
+  if (force) clearCache();
+
+  const cached = readCache(geo.lat, geo.lon);
+  if (cached) {
+    try {
       weatherData = cached.weather; locationData = cached.location;
       alertsData = cached.alerts || []; lastUpdatedAt = cached.savedAt;
-      // Resolve sector from geo cache
-      const geo = readGeoCache();
-      if (geo) satResolvedSector = resolveSector(geo.lat, geo.lon);
       renderHeader(); renderLocationBar(); renderLastUpdated(); renderFilters(); applyFilters(); hideLoading();
-      isLoading = false; if (refreshBtn) refreshBtn.disabled = false; return;
+      return;
+    } catch (e) {
+      // Whatever is stored cannot be drawn. Drop it and fetch again rather
+      // than leaving the overlay covering a half-built page.
+      console.warn("[WeatherBrief] Discarding unrenderable cache:", e.message);
+      clearCache();
     }
   }
 
-  const geo = readGeoCache();
-  if (geo) {
-    satResolvedSector = resolveSector(geo.lat, geo.lon);
-    updateLoading("Fetching weather data");
-    await fetchAndRender(geo.lat, geo.lon);
-    isLoading = false; if (refreshBtn) refreshBtn.disabled = false; return;
-  }
-
-  if (!navigator.geolocation) {
-    showZipFallback("Location not supported — enter a ZIP code");
-    isLoading = false; if (refreshBtn) refreshBtn.disabled = false; return;
-  }
-
-  updateLoading("Requesting location access");
-
-  navigator.geolocation.getCurrentPosition(
-    async (pos) => {
-      updateLoading("Fetching weather data");
-      writeGeoCache(pos.coords.latitude, pos.coords.longitude);
-      satResolvedSector = resolveSector(pos.coords.latitude, pos.coords.longitude);
-      await fetchAndRender(pos.coords.latitude, pos.coords.longitude);
-      isLoading = false; if (refreshBtn) refreshBtn.disabled = false;
-    },
-    () => {
-      showZipFallback("Location denied — enter a ZIP code");
-      isLoading = false; if (refreshBtn) refreshBtn.disabled = false;
-    }
-  );
+  updateLoading("Fetching weather data");
+  await fetchAndRender(geo.lat, geo.lon);
 }
 
 async function fetchAndRender(lat, lon) {
+  // Every render claims a ticket. A response that comes back after the user has
+  // moved on to another place is discarded instead of overwriting the new one.
+  const fetchId = ++activeFetchId;
   try {
     updateLoading("Fetching weather data");
     satResolvedSector = resolveSector(lat, lon);
+    satInvalidate();   // new data for this place means new imagery too
     const [weather, loc] = await Promise.all([getWeather(lat, lon), getCityName(lat, lon)]);
+    if (fetchId !== activeFetchId) return;
     weatherData = weather; locationData = loc; alertsData = [];
-    writeCache(weather, loc, []);
+    writeCache(weather, loc, [], lat, lon);
     renderHeader(); renderLocationBar(); renderLastUpdated(); renderFilters(); applyFilters(); hideLoading();
-    getAlerts(lat, lon).then(alerts => { if (alerts && alerts.length > 0) { alertsData = alerts; writeCache(weather, loc, alerts); applyFilters(); } });
+    getAlerts(lat, lon).then(alerts => {
+      if (fetchId !== activeFetchId) return;
+      if (alerts && alerts.length > 0) {
+        alertsData = alerts;
+        writeCache(weather, loc, alerts, lat, lon);
+        applyFilters();
+      }
+    });
   } catch (e) {
+    if (fetchId !== activeFetchId) return;
     freezeLoading();
     updateLoading("Something went wrong");
   }
@@ -1279,6 +1577,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const zipInp = document.getElementById("zip-input");
   if (zipGo) zipGo.addEventListener("click", handleZipSubmit);
   if (zipInp) zipInp.addEventListener("keydown", e => { if (e.key === "Enter") handleZipSubmit(); });
+  document.getElementById("use-location")?.addEventListener("click", useDeviceLocation);
+
+  // Coming back to a backgrounded tab is the moment a stored fix is most
+  // likely to be wrong -- the laptop was shut in one city and opened in
+  // another. Re-check instead of trusting whatever is on screen.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && !isLoading && !readGeoCache()) loadWeather();
+  });
 
   loadWeather();
 });

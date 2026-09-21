@@ -134,11 +134,14 @@ function stripHtml(html) {
 function normalizeDate(dateStr) {
   if (!dateStr) return null;
   const s = dateStr.trim();
+  // A timestamp with no offset is the publisher's local time, not UTC.
+  // Appending "Z" asserted an offset the feed never gave, shifting the item
+  // by however far that publisher is from Greenwich -- far enough, for an
+  // eastern feed, to look published in the future and be dropped entirely.
+  // Hand it to Date() as a naive local time instead, which is the closest
+  // reading available and errs by hours rather than by a whole timezone.
   if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
-    return s.replace(" ", "T") + "Z";
-  }
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(s)) {
-    return s + "Z";
+    return s.replace(" ", "T");
   }
   return s;
 }
@@ -204,31 +207,77 @@ function displayCategories(articles) {
   return cats.sort();
 }
 
+/* ------------------------------------------------------------
+   Feed content is untrusted input. Everything below it reaches the
+   DOM through innerHTML, so the rule is: the only markup that ever
+   leaves this section is markup we built ourselves.
+   ------------------------------------------------------------ */
+
+function stripTags(str) {
+  return String(str)
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<\/p>/gi, " ")
+    .replace(/<[^>]*>/g, "");
+}
+
+/**
+ * A URL we are willing to put in an href.
+ *
+ * escHtml keeps a value inside its attribute but says nothing about the
+ * scheme, so "javascript:..." survived it intact and stayed one click from
+ * running. Allow the schemes a news link legitimately uses and reject the
+ * rest, including data: and vbscript:. Returns null when there is nothing
+ * safe to link to, and the caller renders plain text instead.
+ */
+function safeHref(url) {
+  const u = String(decodeEntities(String(url || ""))).trim();
+  if (!u) return null;
+  // Browsers strip embedded control characters before resolving a scheme,
+  // so "java\tscript:" would run. Refuse anything carrying them.
+  if (/[\u0000-\u001F\u007F]/.test(u)) return null;
+  if (/^(https?:|mailto:)/i.test(u)) return u;          // ordinary links
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(u)) return null; // any other scheme
+  return u;                                             // relative or //host
+}
+
+/** Build the one anchor shape this file emits. */
+function buildLink(href, label, cls) {
+  const safe = safeHref(href);
+  const text = escHtml(label);
+  if (!safe) return text;
+  return `<a href="${escHtml(safe)}" target="_blank" rel="noopener noreferrer"` +
+         (cls ? ` class="${cls}"` : "") + `>${text}</a>`;
+}
+
 function sanitizePreview(html) {
   if (!html) return "";
 
+  // NUL is our placeholder marker; make sure only we can introduce one.
+  const src = String(html).replace(/\u0000/g, "");
+
   const links = [];
-  const withPlaceholders = html.replace(/<a\b([^>]*)>(.*?)<\/a>/gis, (_, attrs, inner) => {
+  const withPlaceholders = src.replace(/<a\b([^>]*)>(.*?)<\/a>/gis, (_, attrs, inner) => {
     const hrefMatch = attrs.match(/href=["']([^"']+)["']/i);
     const href      = hrefMatch ? hrefMatch[1] : "";
-    const text = inner.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-    const label = text || href;
+    const label     = stripTags(String(decodeEntities(inner))).replace(/\s+/g, " ").trim();
     if (!href) return label;
-    links.push({ href, label });
-    return `\x00LINK${links.length - 1}\x00`;
+    links.push({ href, label: label || href });
+    return `\u0000LINK${links.length - 1}\u0000`;
   });
 
-  let plain = withPlaceholders
-    .replace(/<br\s*\/?>/gi, " ")
-    .replace(/<\/p>/gi, " ")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+  // Feeds are inconsistent about escaping: some send markup, some send it
+  // escaped once, a few twice. Decode and strip in turn until the text stops
+  // changing, so tag-shaped content is removed rather than revealed one layer
+  // later -- which is how "&lt;img onerror=...&gt;" used to become a live tag.
+  // This loop is tidiness; the escape below is what makes the output safe.
+  let plain = withPlaceholders;
+  for (let i = 0; i < 3; i++) {
+    const next = stripTags(String(decodeEntities(plain)));
+    if (next === plain) break;
+    plain = next;
+  }
+
+  plain = plain
     .replace(/\s+/g, " ")
     .replace(/\s*\[…\]\s*/g, " ")
     .replace(/\s*\[\.\.\.\]\s*/g, " ")
@@ -240,12 +289,14 @@ function sanitizePreview(html) {
     .replace(/\s{2,}/g, " ")
     .trim();
 
-  plain = plain.replace(/\x00LINK(\d+)\x00/g, (_, i) => {
-    const { href, label } = links[Number(i)];
-    return `<a href="${escHtml(href)}" target="_blank" rel="noopener noreferrer" class="preview-link">${escHtml(label)}</a>`;
-  });
+  // The safety boundary. Past this point the string holds no live markup;
+  // the placeholders survive because they contain no HTML-special character.
+  plain = escHtml(plain);
 
-  return plain;
+  return plain.replace(/\u0000LINK(\d+)\u0000/g, (_, i) => {
+    const link = links[Number(i)];
+    return link ? buildLink(link.href, link.label, "preview-link") : "";
+  });
 }
 
 /* ============================================================
@@ -389,33 +440,58 @@ function weightedCategoryFill(articles, total) {
 
   const now = Date.now();
 
+  // Three tiers, and every article lands in exactly one of them. Previously
+  // an item with no pubDate, an unparseable one, a clock-skewed future one,
+  // or simply an age past extendedHours matched no branch and was discarded,
+  // so a quiet overnight window could empty the page while every feed was
+  // loading perfectly well.
   const fresh    = [];
   const extended = [];
+  const rest     = [];
   for (const a of articles) {
     if (a.category === "Tech" && isTechSpam(a)) continue;
     const t = a.pubDate ? new Date(a.pubDate).getTime() : 0;
     const age = now - t;
-    if (t > 0 && age >= 0 && age <= FRESH_MS) {
+    if (!t || Number.isNaN(t) || age < 0) {
+      // No usable timestamp, or one in the future: keep it, rank it last.
+      rest.push(a);
+    } else if (age <= FRESH_MS) {
       fresh.push(a);
-    } else if (t > 0 && age > FRESH_MS && age <= EXTENDED_MS) {
+    } else if (age <= EXTENDED_MS) {
       extended.push(a);
+    } else {
+      rest.push(a);
     }
   }
 
   const freshResult = _weightedSelect(fresh, total, NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_SLOTS, CYCLE);
 
-  if (freshResult.length < total) {
-    const needed = total - freshResult.length;
-    const usedSet = new Set(freshResult.map(a => a.title + "|" + a.source));
-    const extPool = extended.filter(a => !usedSet.has(a.title + "|" + a.source));
-    const extFill = _weightedSelect(extPool, needed, NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_SLOTS, CYCLE);
-    freshResult.push(...extFill);
+  const keyOf = a => a.title + "|" + a.source;
+  for (const pool of [extended, rest]) {
+    if (freshResult.length >= total) break;
+    const used = new Set(freshResult.map(keyOf));
+    const avail = pool.filter(a => !used.has(keyOf(a)));
+    freshResult.push(..._weightedSelect(avail, total - freshResult.length,
+      NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_SLOTS, CYCLE));
   }
 
+  // Tier first, then recency. Sorting on date alone undoes the tiers: a
+  // clock-skewed future stamp would outrank genuinely fresh items, and an
+  // unparseable date yields NaN, which makes the comparator inconsistent and
+  // leaves the whole order up to the engine.
+  const tierOf = new Map();
+  fresh.forEach(a    => tierOf.set(a, 0));
+  extended.forEach(a => tierOf.set(a, 1));
+  rest.forEach(a     => tierOf.set(a, 2));
+  const timeOf = a => {
+    const t = a.pubDate ? new Date(a.pubDate).getTime() : NaN;
+    return Number.isFinite(t) ? t : -Infinity;   // undated sorts last
+  };
   freshResult.sort((a, b) => {
-    const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
-    const db = b.pubDate ? new Date(b.pubDate).getTime() : 0;
-    return db - da;
+    const ta = tierOf.has(a) ? tierOf.get(a) : 2;
+    const tb = tierOf.has(b) ? tierOf.get(b) : 2;
+    if (ta !== tb) return ta - tb;
+    return timeOf(b) - timeOf(a);
   });
 
   return freshResult;
@@ -580,7 +656,9 @@ function applySourceTransforms(articles, source) {
 async function fetchFeed(source) {
   const cached = readCache(source.url);
   if (cached) {
-    return { articles: applySourceTransforms(cached.articles, source), fromCache: true, error: null };
+    // writeCache stores post-transform articles, so transforming again would
+    // decode entities a second time -- cached text would drift from live text.
+    return { articles: cached.articles, fromCache: true, error: null };
   }
   try {
     const articles = applySourceTransforms(await fetchFeedViaRss2Json(source), source);
@@ -792,6 +870,7 @@ function renderCategoryFilters(articles) {
 
 function buildArticleCard(article, colorIndex) {
   const color   = colorForIndex(colorIndex);
+  const articleLink = safeHref(article.link);
   const preview = sanitizePreview(article.description);
   const timeStr = formatDate(article.pubDate);
   const catCls  = categoryClass(article.category);
@@ -824,12 +903,10 @@ function buildArticleCard(article, colorIndex) {
       ${article.category ? `<span class="card-category ${catCls}">${escHtml(article.category)}</span>` : ""}
     </div>
     <div class="card-title">
-      <a href="${escHtml(article.link)}" target="_blank" rel="noopener noreferrer">
-        ${escHtml(article.title)}
-      </a>
+      ${buildLink(article.link, article.title)}
     </div>
     ${previewHtml}
-    <a class="card-read" href="${escHtml(article.link)}" target="_blank" rel="noopener noreferrer">Read →</a>
+    ${articleLink ? `<a class="card-read" href="${escHtml(articleLink)}" target="_blank" rel="noopener noreferrer">Read →</a>` : ""}
   </div>
 </div>`.trim();
 }
@@ -838,16 +915,34 @@ function findHtmlCutPoint(html, limit) {
   let visible = 0;
   let inTag = false;
   let lastSpace = -1;
+  let anchorStart = -1;   // where the anchor we are inside began
   for (let i = 0; i < html.length; i++) {
-    if (html[i] === "<") { inTag = true; continue; }
-    if (html[i] === ">") { inTag = false; continue; }
-    if (!inTag) {
-      visible++;
-      if (html[i] === " ") lastSpace = i;
-      if (visible >= limit) {
-        if (lastSpace > i - 30 && lastSpace > 0) return lastSpace;
-        return i;
-      }
+    const ch = html[i];
+    if (ch === "<") {
+      inTag = true;
+      if (/^<a\b/i.test(html.slice(i, i + 3))) anchorStart = i;
+      else if (/^<\/a>/i.test(html.slice(i, i + 4))) anchorStart = -1;
+      continue;
+    }
+    if (ch === ">") { inTag = false; continue; }
+    if (inTag) continue;
+
+    // An entity is one character on screen, not five.
+    if (ch === "&") {
+      const m = /^&(#[xX][0-9a-fA-F]+|#\d+|[a-zA-Z][a-zA-Z0-9]*);/.exec(html.slice(i));
+      if (m) { visible++; i += m[0].length - 1; continue; }
+    }
+
+    visible++;
+    if (ch === " ") lastSpace = i;
+    if (visible >= limit) {
+      // Never cut between <a> and </a>: the unclosed anchor would swallow
+      // the "Expand" link that follows it. If the anchor starts at the very
+      // beginning there is nothing to keep, so leave the preview whole rather
+      // than truncating it to nothing.
+      if (anchorStart >= 0) return anchorStart > 0 ? anchorStart : html.length;
+      if (lastSpace > i - 30 && lastSpace > 0) return lastSpace;
+      return i;
     }
   }
   return html.length;
