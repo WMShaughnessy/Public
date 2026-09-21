@@ -59,6 +59,9 @@ let satTimer           = null;
 let satCurrentFrame    = 0;
 let satInterval        = 150; // ms between frames
 let satResolvedSector  = null;
+let satFramesKey       = null; // what satFrames were fetched for
+let satFramesAt        = 0;    // when they were fetched
+const SAT_FRAMES_TTL_MS = 10 * 60 * 1000; // GOES publishes roughly every 10 min
 
 const GOES_CDN  = 'https://cdn.star.nesdis.noaa.gov';
 const GOES_PAGE = 'https://www.star.nesdis.noaa.gov/GOES';
@@ -522,6 +525,12 @@ async function fetchSatFrames(sector, band, maxFrames) {
    SATELLITE — Player controls
    ============================================================ */
 
+/** Force the next satLoad() to re-fetch rather than repaint what it has. */
+function satInvalidate() {
+  satFramesKey = null;
+  satFramesAt  = 0;
+}
+
 function satStop() {
   satPlaying = false;
   clearInterval(satTimer);
@@ -648,14 +657,29 @@ async function satLoad() {
   if (!sector) return;
 
   satStop();
-  satFrames = [];
-
   satResolvedSector = sector;
   const dur = SAT_DURATIONS.find(d => d.id === satCurrentDuration) || SAT_DURATIONS[1];
 
   // Update header
   const headerEl = document.getElementById('sat-sector-label');
   if (headerEl) headerEl.textContent = sector.label + ' Sector';
+
+  // applyFilters() rebuilds the whole page body, so it lands here on every
+  // filter click and again when the late alerts response arrives about a
+  // second after first paint. Re-fetching the CDN directory each time costs a
+  // request and visibly resets the animation, for imagery that has not
+  // changed. The frames depend only on sector, band and duration, so when
+  // those still match a recent fetch, repaint from what we already have.
+  const key = sector.id + '|' + satCurrentBand + '|' + dur.id;
+  if (key === satFramesKey && satFrames.length &&
+      Date.now() - satFramesAt < SAT_FRAMES_TTL_MS) {
+    satShowFrame(Math.min(satCurrentFrame, satFrames.length - 1));
+    satPlay();
+    return;
+  }
+
+  satFrames = [];
+  satFramesKey = null;
 
   // Show loading state
   const img = document.getElementById('sat-image');
@@ -671,11 +695,17 @@ async function satLoad() {
   }
 
   try {
-    satFrames = await fetchSatFrames(sector, satCurrentBand, dur.maxFrames);
+    const frames = await fetchSatFrames(sector, satCurrentBand, dur.maxFrames);
+    // A band or duration change while this was in flight has already started
+    // its own load; dropping this result keeps the two from fighting.
+    if (key !== sector.id + '|' + satCurrentBand + '|' + dur.id) return;
+    satFrames = frames;
     if (satFrames.length === 0) {
       if (tsLabel) tsLabel.textContent = 'No frames available';
       return;
     }
+    satFramesKey = key;
+    satFramesAt  = Date.now();
     // Preload
     satFrames.forEach(url => { const i = new Image(); i.src = url; });
     satShowFrame(satFrames.length - 1);
@@ -1514,6 +1544,7 @@ async function fetchAndRender(lat, lon) {
   try {
     updateLoading("Fetching weather data");
     satResolvedSector = resolveSector(lat, lon);
+    satInvalidate();   // new data for this place means new imagery too
     const [weather, loc] = await Promise.all([getWeather(lat, lon), getCityName(lat, lon)]);
     if (fetchId !== activeFetchId) return;
     weatherData = weather; locationData = loc; alertsData = [];
