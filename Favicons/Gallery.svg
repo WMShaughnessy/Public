@@ -3,7 +3,7 @@
   <clipPath id="left-peak"><polygon points="-4,64 22,24 48,64"/></clipPath>
   <g clip-path="url(#tile)">
     <rect width="64" height="64" fill="#F7D500"/>
-    <circle cx="46" cy="18" r="8" fill="#D92121"/>
+    <circle cx="46" cy="18" r="8" fill="#F4EFE4"/>
     <polygon points="-4,64 22,24 48,64" fill="#1B4B9A"/>
     <polygon points="26,64 46,34 66,64" fill="#D92121"/>
     <polygon points="26,64 46,34 66,64" fill="#1A1A1A" clip-path="url(#left-peak)"/>
