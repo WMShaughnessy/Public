@@ -1,21 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <clipPath id="tile"><rect width="64" height="64" rx="14"/></clipPath>
-  <clipPath id="disc"><circle cx="29" cy="29" r="23"/></clipPath>
-  <clipPath id="north"><rect width="64" height="29"/></clipPath>
-  <clipPath id="south"><rect y="29" width="64" height="35"/></clipPath>
-  <clipPath id="meridian"><path d="M18 29a11 27 0 1 0 22 0a11 27 0 1 0 -22 0ZM23 29a6 27 0 1 0 12 0a6 27 0 1 0 -12 0Z" clip-rule="evenodd"/></clipPath>
   <g clip-path="url(#tile)">
-    <rect width="64" height="64" fill="#F7D500"/>
-    <polygon points="64,0 64,64 0,64" fill="#D92121"/>
-    <circle cx="35" cy="35" r="23" fill="#1A1A1A"/>
-    <g clip-path="url(#disc)">
-      <circle cx="29" cy="29" r="23" fill="#1B4B9A"/>
-      <g transform="rotate(-23 29 29)">
-        <path d="M18 29a11 27 0 1 0 22 0a11 27 0 1 0 -22 0ZM23 29a6 27 0 1 0 12 0a6 27 0 1 0 -12 0Z" fill-rule="evenodd" fill="#F7D500" clip-path="url(#north)"/>
-        <path d="M18 29a11 27 0 1 0 22 0a11 27 0 1 0 -22 0ZM23 29a6 27 0 1 0 12 0a6 27 0 1 0 -12 0Z" fill-rule="evenodd" fill="#D92121" clip-path="url(#south)"/>
-        <rect y="26.5" width="64" height="5" fill="#F4EFE4"/>
-        <rect y="26.5" width="64" height="5" fill="#1A1A1A" clip-path="url(#meridian)"/>
-      </g>
-    </g>
+    <rect width="64" height="64" fill="#1B4B9A"/>
+    <polygon points="13,32.32 36,13 59,32.32 59,59 13,59" fill="#1A1A1A"/>
+    <polygon points="7,26.32 30,7 53,26.32 53,53 7,53" fill="#D92121"/>
+    <polygon points="14,30.94 30,17.5 46,30.94 46,49.5 14,49.5" fill="#F7D500"/>
+    <polygon points="21,35.56 30,28 39,35.56 39,46 21,46" fill="#F4EFE4"/>
   </g>
 </svg>
