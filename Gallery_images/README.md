@@ -8,16 +8,17 @@ The live site reads this folder **on the `main` branch** — photos on another
 branch, or only on your computer, won't appear there until they're merged or
 pushed to `main`.
 
-To preview locally before pushing, run a web server in the repo folder and
-open `http://localhost:8000/Gallery.html` — the page then reads your local
+Opening `Gallery.html` straight from your computer also works: the photo
+list, captions and dates come from GitHub (`main`), and the images display
+from your local copy.
+
+To preview photos you haven't pushed yet, run a web server in the repo folder
+and open `http://localhost:8000/Gallery.html` — the page then lists your local
 `Gallery_images/` instead:
 
 ```
 python3 -m http.server 8000
 ```
-
-(Double-clicking `Gallery.html` to open it as a file won't work; browsers
-block a file page from reading the folder.)
 
 ## Layout
 

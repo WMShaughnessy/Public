@@ -88,8 +88,28 @@ function encodePath(path) {
   return path.split("/").map(encodeURIComponent).join("/");
 }
 
+/** Where a photo is displayed from — the copy next to this page. */
 function photoUrl(path) {
   return `${encodePath(CFG.imagesDir)}/${encodePath(path)}`;
+}
+
+/** The same file on GitHub, used when the local copy can't be read. */
+function remoteUrl(path) {
+  return `https://raw.githubusercontent.com/${encodeURIComponent(CFG.owner)}/${encodeURIComponent(CFG.repo)}/` +
+         `${encodePath(CFG.branch)}/${encodePath(CFG.imagesDir)}/${encodePath(path)}`;
+}
+
+function isFilePage() {
+  return location.protocol === "file:";
+}
+
+/**
+ * Where file contents (gallery.json, photo dates) are read from. A page
+ * opened from disk can display local images but the browser won't let it
+ * read local files, so it reads them from GitHub instead.
+ */
+function dataUrl(path) {
+  return isFilePage() ? remoteUrl(path) : photoUrl(path);
 }
 
 function tagKey(label) {
@@ -302,7 +322,10 @@ function exifDateFromBuffer(buf) {
 
 /** Read up to maxBytes from the start of a file without downloading the rest. */
 async function fetchHead(url, maxBytes) {
-  const res = await fetch(url, { headers: { Range: `bytes=0-${maxBytes - 1}` } });
+  // Ask for just the first bytes from this site; other hosts would need a
+  // CORS preflight for the Range header, so stream and stop early instead.
+  const sameOrigin = new URL(url, location.href).origin === location.origin;
+  const res = await fetch(url, sameOrigin ? { headers: { Range: `bytes=0-${maxBytes - 1}` } } : {});
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   if (res.status === 206 || !res.body || !res.body.getReader) return res.arrayBuffer();
 
@@ -324,7 +347,7 @@ async function fetchHead(url, maxBytes) {
 }
 
 async function readExifDate(photo) {
-  const url = photoUrl(photo.path);
+  const url = dataUrl(photo.path);
   let found = exifDateFromBuffer(await fetchHead(url, EXIF_HEAD_BYTES));
   const size = photo.size;                            // null when served from a local folder
   if (found === undefined && (size === null || (size > EXIF_HEAD_BYTES && size <= FULL_SCAN_MAX_BYTES))) {
@@ -393,7 +416,7 @@ async function loadCaptions(fileEntry, cache, keep) {
   let text = key && typeof cache[key] === "string" ? cache[key] : null;
   if (text === null) {
     try {
-      const res = await fetch(photoUrl(fileEntry.path), { cache: "no-store" });
+      const res = await fetch(dataUrl(fileEntry.path), { cache: "no-store" });
       if (res.ok) text = await res.text();
     } catch {}
   }
@@ -464,11 +487,9 @@ function treeCacheId() {
 }
 
 async function fetchListing(force) {
-  if (location.protocol === "file:") {
-    throw new Error("This page was opened as a file on your computer, so it can't read the photo folder. " +
-                    "Open it from the GitHub Pages site, or run a local web server in the repo folder.");
-  }
-  if (!isGithubPages()) {
+  // A local web server's folder listing shows photos before they're pushed.
+  // Pages opened from disk (file://) and GitHub Pages use the GitHub listing.
+  if (!isGithubPages() && !isFilePage()) {
     try {
       const entries = await fetchServerListing();
       return { entries, savedAt: Date.now(), fromCache: false, source: "local" };
@@ -721,26 +742,21 @@ function renderViewButtons() {
 function filterButton(entry) {
   const active = entry ? activeTag === entry.key : activeTag === null;
   const label  = entry ? escHtml(entry.label) : "All";
-  const count  = entry ? `<span class="filter-count">${entry.count}</span>` : "";
-  return `<button class="filter-btn${active ? " active" : ""}" data-tag="${entry ? escHtml(entry.key) : ""}">${label}${count}</button>`;
+  return `<button class="filter-btn${active ? " active" : ""}" data-tag="${entry ? escHtml(entry.key) : ""}">${label}</button>`;
 }
 
+/** "All", then albums, then tags — same button row as the briefs. */
 function renderFilters() {
   const wrap = document.getElementById("filter-buttons");
   if (!wrap) return;
-  const entries = [...tagIndex.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
-  const albums  = entries.filter(t => t.album);
-  const tags    = entries.filter(t => !t.album);
+  const byLabel = (a, b) => a.label.localeCompare(b.label, undefined, { numeric: true });
+  const entries = [...tagIndex.values()];
   if (!entries.length) { wrap.innerHTML = ""; return; }
-
-  let html = filterButton(null);
-  if (albums.length) {
-    html += `<span class="filter-break"></span><span class="filter-group-label">Albums</span>` + albums.map(filterButton).join("");
-  }
-  if (tags.length) {
-    html += `<span class="filter-break"></span><span class="filter-group-label">Tags</span>` + tags.map(filterButton).join("");
-  }
-  wrap.innerHTML = html;
+  const ordered = [
+    ...entries.filter(t => t.album).sort(byLabel),
+    ...entries.filter(t => !t.album).sort(byLabel),
+  ];
+  wrap.innerHTML = filterButton(null) + ordered.map(filterButton).join("");
 }
 
 function renderLastUpdated() {
@@ -756,10 +772,9 @@ function renderLastUpdated() {
    ============================================================ */
 
 function tagChipsHtml(photo) {
-  return photo.tags.map(t => {
-    const cls = (t.album ? "card-source" : "card-category") + (t.key === activeTag ? " active" : "");
-    return `<button class="${cls}" data-act="tag" data-tag="${escHtml(t.key)}" title="Show ${escHtml(t.album ? "album" : "tag")}: ${escHtml(t.label)}">${escHtml(t.label)}</button>`;
-  }).join("");
+  return photo.tags
+    .map(t => `<span class="${t.album ? "card-source" : "card-category"}">${escHtml(t.label)}</span>`)
+    .join("");
 }
 
 function detailsHtml(photo, { withTime = true } = {}) {
@@ -796,10 +811,7 @@ function renderSlideshow() {
   <div class="card-body">
     ${detailsHtml(photo)}
     <div class="slide-stage" id="slide-stage">
-      <img src="${escHtml(photoUrl(photo.path))}" alt="${escHtml(altText(photo))}" decoding="async" data-act="expand" title="Expand">
-      ${n > 1 ? `
-      <button class="slide-hit prev" data-act="prev" aria-label="Previous photo"><span>←</span></button>
-      <button class="slide-hit next" data-act="next" aria-label="Next photo"><span>→</span></button>` : ""}
+      <img src="${escHtml(photoUrl(photo.path))}" data-path="${escHtml(photo.path)}" alt="${escHtml(altText(photo))}" decoding="async">
     </div>
     <div class="slide-nav">
       <div class="controls">
@@ -852,9 +864,9 @@ function renderFeed() {
   <div class="card-accent ${colorForIndex(i)}"></div>
   <div class="card-body">
     ${detailsHtml(photo)}
-    <button class="feed-image" data-act="open" data-index="${i}" aria-label="Open in slideshow">
-      <img src="${escHtml(photoUrl(photo.path))}" alt="${escHtml(altText(photo))}" loading="lazy" decoding="async">
-    </button>
+    <div class="feed-image">
+      <img src="${escHtml(photoUrl(photo.path))}" data-path="${escHtml(photo.path)}" alt="${escHtml(altText(photo))}" loading="lazy" decoding="async">
+    </div>
     ${captionHtml(photo)}
   </div>
 </div>`);
@@ -1035,7 +1047,9 @@ function closeViewer() {
   exitFullscreen();
   viewer.classList.remove("open", "mode-native", "mode-fit");
   document.body.classList.remove("viewer-open");
-  document.getElementById("viewer-img").removeAttribute("src");
+  const img = document.getElementById("viewer-img");
+  img.removeAttribute("src");
+  delete img.dataset.path;
   if (activeView === "slideshow") renderSlideshow();
   writeHash();
 }
@@ -1096,7 +1110,9 @@ function renderViewer() {
     scroll.scrollLeft = (scroll.scrollWidth  - scroll.clientWidth)  / 2;
     scroll.scrollTop  = (scroll.scrollHeight - scroll.clientHeight) / 2;
   };
-  if (img.getAttribute("src") !== src) {
+  if (img.dataset.path !== photo.path) {
+    img.dataset.path = photo.path;
+    delete img.dataset.remote;
     img.src = src;
   } else if (img.complete) {
     img.onload();
@@ -1128,13 +1144,6 @@ function handleAction(btn) {
   else if (act === "fullscreen") viewerMode ? toggleViewerFullscreen() : openViewer("fit", true);
   else if (act === "close")      closeViewer();
   else if (act === "mode")       { viewerMode = viewerMode === "native" ? "fit" : "native"; renderViewer(); }
-  else if (act === "tag")        { if (viewerMode) closeViewer(); setTag(btn.dataset.tag === activeTag ? null : btn.dataset.tag); }
-  else if (act === "open") {
-    slideIndex = Number(btn.dataset.index) || 0;
-    activeView = "slideshow";
-    render();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
 }
 
 function attachSwipe(el, enabled) {
@@ -1164,11 +1173,7 @@ function initInput() {
   const viewer = document.getElementById("viewer");
   viewer.addEventListener("click", e => {
     const btn = e.target.closest("[data-act]");
-    if (btn && !btn.disabled) { handleAction(btn); return; }
-    if (e.target.id === "viewer-img") {         // click the photo to zoom in / out
-      viewerMode = viewerMode === "native" ? "fit" : "native";
-      renderViewer();
-    }
+    if (btn && !btn.disabled) handleAction(btn);
   });
   attachSwipe(document.getElementById("viewer-scroll"), () => viewerMode === "fit");
 
@@ -1199,6 +1204,14 @@ function initInput() {
     else if (e.key === "ArrowRight") { step(1);  e.preventDefault(); }
     else if (e.key === "Escape" && viewerMode) closeViewer();
   });
+
+  // Opened from disk: a listed photo missing from this copy is shown from GitHub.
+  document.addEventListener("error", e => {
+    const img = e.target;
+    if (!isFilePage() || !(img instanceof HTMLImageElement) || !img.dataset.path || img.dataset.remote) return;
+    img.dataset.remote = "1";
+    img.src = remoteUrl(img.dataset.path);
+  }, true);
 
   document.addEventListener("fullscreenchange", onFullscreenChange);
   document.addEventListener("webkitfullscreenchange", onFullscreenChange);
