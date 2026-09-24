@@ -9,9 +9,9 @@
  *  - Subfolders are albums; the folder name is a tag on every photo inside
  *  - One optional gallery.json for titles, captions, tags and dates
  *  - Photo date read from EXIF metadata (JPEG, PNG, WebP), cached per file
- *  - Views: Slideshow (default), chronological Feed
- *  - Album / tag filters shared by both views
- *  - Expanded view (native resolution) and Full Screen
+ *  - Views: Slideshow (default), Thumbnails grid, chronological Feed
+ *  - Album / tag filters shared by every view
+ *  - Expanded view (photo fitted to most of the screen) and Full Screen
  *  - Keyboard (← → Esc), swipe, auto-play, and linkable URL hash state
  */
 
@@ -40,7 +40,7 @@ const IMAGE_EXTS          = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"
 const EXIF_HEAD_BYTES     = 256 * 1024;        // EXIF lives in the first 64 KB of a JPEG
 const FULL_SCAN_MAX_BYTES = 25 * 1024 * 1024;  // PNG/WebP may store EXIF at the end
 const META_CONCURRENCY    = 4;
-const VIEWS               = ["slideshow", "feed"];
+const VIEWS               = ["slideshow", "thumbnails", "feed"];
 
 /* ============================================================
    STATE
@@ -55,8 +55,8 @@ let newestFirst  = CFG.newestFirst !== false;
 let slideIndex   = 0;
 let isLoading    = false;
 let playTimer    = null;
-let viewerMode   = null;  // null (closed) | "native" | "fit"
-let fsOwnedByViewer = false;
+let viewerMode   = null;  // null (closed) | "expanded" | "full"
+let fullClosesViewer = false; // viewer was opened straight into full screen
 let listingInfo  = null;  // { savedAt, fromCache, stale, error }
 let pendingHash  = null;  // hash state to apply once photos load
 let loadNotices  = [];    // problems with the captions file
@@ -845,6 +845,40 @@ function preloadNeighbors() {
 }
 
 /* ============================================================
+   RENDER — thumbnails (same month headings as the feed)
+   ============================================================ */
+
+function renderThumbnails() {
+  const wrapper = document.getElementById("gallery-wrapper");
+  if (!wrapper) return;
+  if (!viewPhotos.length) { wrapper.innerHTML = noticeHtml() + emptyHtml(); return; }
+
+  const groups = [];
+  viewPhotos.forEach((photo, i) => {
+    const month = monthLabel(photo);
+    if (!groups.length || groups[groups.length - 1].month !== month) groups.push({ month, tiles: [] });
+    groups[groups.length - 1].tiles.push(`
+  <button class="thumb" data-act="open" data-index="${i}">
+    <img src="${escHtml(photoUrl(photo.path))}" data-path="${escHtml(photo.path)}" alt="${escHtml(altText(photo))}" loading="lazy" decoding="async">
+  </button>`);
+  });
+
+  const parts = [noticeHtml()];
+  groups.forEach((group, gi) => {
+    // Undated photos get no heading, just the same gap a heading leaves.
+    if (group.month) parts.push(`<div class="feed-month">${escHtml(group.month)}</div>`);
+    const gap = !group.month && gi > 0 ? " feed-card-gap" : "";
+    parts.push(`<div class="thumb-grid${gap}">${group.tiles.join("")}</div>`);
+  });
+  wrapper.innerHTML = parts.join("");
+}
+
+function focusCurrentThumb() {
+  const thumb = document.querySelector(`.thumb[data-index="${slideIndex}"]`);
+  if (thumb) thumb.focus();
+}
+
+/* ============================================================
    RENDER — chronological feed
    ============================================================ */
 
@@ -933,6 +967,7 @@ function render() {
   renderFilters();
   renderLastUpdated();
   if (activeView === "feed") renderFeed();
+  else if (activeView === "thumbnails") renderThumbnails();
   else renderSlideshow();
   writeHash();
 }
@@ -998,16 +1033,11 @@ function restartPlay() {
 }
 
 /* ============================================================
-   VIEWER — Expanded (native resolution) + Full Screen
+   VIEWER — Expanded (photo fitted to most of the screen) + Full Screen
    ============================================================ */
 
 function fullscreenElement() {
   return document.fullscreenElement || document.webkitFullscreenElement || null;
-}
-
-function fullscreenSupported() {
-  const el = document.documentElement;
-  return !!(el.requestFullscreen || el.webkitRequestFullscreen);
 }
 
 function enterFullscreen(el) {
@@ -1015,7 +1045,7 @@ function enterFullscreen(el) {
   if (!req) return;
   try {
     const p = req.call(el);
-    if (p && p.catch) p.catch(() => { fsOwnedByViewer = false; renderViewerChrome(); });
+    if (p && p.catch) p.catch(() => {});      // refused: the viewer still fills the window
   } catch {}
 }
 
@@ -1029,16 +1059,14 @@ function exitFullscreen() {
   }
 }
 
-function openViewer(mode, fullscreen) {
+function openViewer(mode) {
   if (!viewPhotos.length) return;
   const viewer = document.getElementById("viewer");
   viewerMode = mode;
+  fullClosesViewer = mode === "full";
   viewer.classList.add("open");
   document.body.classList.add("viewer-open");
-  if (fullscreen && fullscreenSupported()) {
-    fsOwnedByViewer = true;
-    enterFullscreen(viewer);
-  }
+  if (mode === "full") enterFullscreen(viewer);
   renderViewer();
   const closeBtn = viewer.querySelector('[data-act="close"]');
   if (closeBtn) closeBtn.focus({ preventScroll: true });
@@ -1048,79 +1076,68 @@ function closeViewer() {
   if (!viewerMode) return;
   const viewer = document.getElementById("viewer");
   viewerMode = null;
-  fsOwnedByViewer = false;
+  fullClosesViewer = false;
   exitFullscreen();
-  viewer.classList.remove("open", "mode-native", "mode-fit");
+  viewer.classList.remove("open", "mode-full");
   document.body.classList.remove("viewer-open");
   const img = document.getElementById("viewer-img");
   img.removeAttribute("src");
   delete img.dataset.path;
-  if (activeView === "slideshow") renderSlideshow();
+  if (activeView === "slideshow") {
+    renderSlideshow();
+  } else {
+    stopPlay();                                // nothing left on screen to advance
+    if (activeView === "thumbnails") focusCurrentThumb();
+  }
   writeHash();
 }
 
-function toggleViewerFullscreen() {
-  if (fullscreenElement()) {
-    fsOwnedByViewer = false;                   // leaving by button keeps the viewer open
-    exitFullscreen();
-  } else {
-    fsOwnedByViewer = true;
-    viewerMode = "fit";
+/** Switch between the expanded view and full screen without closing. */
+function setViewerFull(full) {
+  if (full) {
+    viewerMode = "full";
     enterFullscreen(document.getElementById("viewer"));
-    renderViewer();
+  } else {
+    viewerMode = "expanded";
+    fullClosesViewer = false;                  // leaving by button keeps the viewer open
+    exitFullscreen();
   }
+  renderViewerChrome();
+}
+
+/** Esc: full screen goes back to where it was opened from; otherwise close. */
+function leaveViewer() {
+  if (viewerMode === "full" && !fullClosesViewer) setViewerFull(false);
+  else closeViewer();
 }
 
 function renderViewerChrome() {
   const viewer = document.getElementById("viewer");
-  viewer.classList.toggle("mode-native", viewerMode === "native");
-  viewer.classList.toggle("mode-fit", viewerMode === "fit");
-
-  const modeBtn = document.getElementById("viewer-mode");
-  if (modeBtn) modeBtn.textContent = viewerMode === "native" ? "Fit to Screen" : "Actual Size";
+  viewer.classList.toggle("mode-full", viewerMode === "full");
 
   const fsBtn = document.getElementById("viewer-fs");
-  if (fsBtn) {
-    fsBtn.hidden = !fullscreenSupported();
-    fsBtn.textContent = fullscreenElement() ? "Exit Full Screen" : "Full Screen";
-  }
+  if (fsBtn) fsBtn.textContent = viewerMode === "full" ? "Exit Full Screen" : "Full Screen";
+
   viewer.querySelectorAll('[data-act="prev"], [data-act="next"], [data-act="play"]').forEach(b => {
     b.disabled = viewPhotos.length < 2;
   });
   syncPlayButtons();
 }
 
-function renderViewerCount(img) {
-  const count = document.getElementById("viewer-count");
-  if (!count) return;
-  const dims = img && img.naturalWidth ? ` · ${img.naturalWidth} × ${img.naturalHeight} px` : "";
-  count.textContent = `${slideIndex + 1} / ${viewPhotos.length}${dims}`;
-}
-
 function renderViewer() {
   const n = viewPhotos.length;
   if (!n || !viewerMode) return;
   slideIndex = ((slideIndex % n) + n) % n;
-  const photo  = viewPhotos[slideIndex];
-  const img    = document.getElementById("viewer-img");
-  const scroll = document.getElementById("viewer-scroll");
+  const photo = viewPhotos[slideIndex];
+  const img   = document.getElementById("viewer-img");
 
   renderViewerChrome();
-  renderViewerCount(null);
+  document.getElementById("viewer-count").textContent = `${slideIndex + 1} / ${n}`;
 
-  const src = photoUrl(photo.path);
-  img.onload = () => {
-    renderViewerCount(img);
-    // Start the native-size view centred on the photo.
-    scroll.scrollLeft = (scroll.scrollWidth  - scroll.clientWidth)  / 2;
-    scroll.scrollTop  = (scroll.scrollHeight - scroll.clientHeight) / 2;
-  };
   if (img.dataset.path !== photo.path) {
     img.dataset.path = photo.path;
     delete img.dataset.remote;
-    img.src = src;
-  } else if (img.complete) {
-    img.onload();
+    img.src = photoUrl(photo.path);
   }
   img.alt = altText(photo);
 
@@ -1130,10 +1147,9 @@ function renderViewer() {
 }
 
 function onFullscreenChange() {
-  // Esc (or the browser's own control) closes full screen — close the viewer with it.
-  if (!viewerMode) return;
-  if (!fullscreenElement() && fsOwnedByViewer) closeViewer();
-  else renderViewerChrome();
+  // The browser left full screen (Esc or its own control).
+  if (viewerMode !== "full" || fullscreenElement()) return;
+  leaveViewer();
 }
 
 /* ============================================================
@@ -1145,10 +1161,10 @@ function handleAction(btn) {
   if (act === "prev")            step(-1);
   else if (act === "next")       step(1);
   else if (act === "play")       playTimer ? stopPlay() : startPlay();
-  else if (act === "expand")     openViewer("native", false);
-  else if (act === "fullscreen") viewerMode ? toggleViewerFullscreen() : openViewer("fit", true);
+  else if (act === "expand")     openViewer("expanded");
+  else if (act === "open")       { slideIndex = +btn.dataset.index; openViewer("expanded"); }
+  else if (act === "fullscreen") viewerMode ? setViewerFull(viewerMode !== "full") : openViewer("full");
   else if (act === "close")      closeViewer();
-  else if (act === "mode")       { viewerMode = viewerMode === "native" ? "fit" : "native"; renderViewer(); }
 }
 
 function attachSwipe(el, enabled) {
@@ -1177,10 +1193,11 @@ function initInput() {
 
   const viewer = document.getElementById("viewer");
   viewer.addEventListener("click", e => {
+    if (e.target === viewer) { closeViewer(); return; }   // the dimmed area around the expanded view
     const btn = e.target.closest("[data-act]");
     if (btn && !btn.disabled) handleAction(btn);
   });
-  attachSwipe(document.getElementById("viewer-scroll"), () => viewerMode === "fit");
+  attachSwipe(document.getElementById("viewer-stage"), () => !!viewerMode);
 
   document.getElementById("view-buttons").addEventListener("click", e => {
     const btn = e.target.closest(".view-btn");
@@ -1207,7 +1224,7 @@ function initInput() {
     if (!viewPhotos.length) return;
     if (e.key === "ArrowLeft")       { step(-1); e.preventDefault(); }
     else if (e.key === "ArrowRight") { step(1);  e.preventDefault(); }
-    else if (e.key === "Escape" && viewerMode) closeViewer();
+    else if (e.key === "Escape" && viewerMode) leaveViewer();
   });
 
   // Opened from disk: a listed photo missing from this copy is shown from GitHub.
