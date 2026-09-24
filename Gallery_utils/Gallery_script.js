@@ -10,6 +10,9 @@
  *  - One optional gallery.json for titles, captions, tags and dates
  *  - Photo date read from EXIF metadata (JPEG, PNG, WebP), cached per file
  *  - Views: Slideshow (default), Thumbnails grid, chronological Feed
+ *  - Thumbnails show small copies made one at a time by a worker
+ *    (Gallery_thumbs.js) and kept in Cache Storage, so phones never hold
+ *    every full-size photo at once
  *  - Album / tag filters shared by every view
  *  - Expanded view (photo fitted to most of the screen) and Full Screen
  *  - Keyboard (← → Esc), swipe, auto-play, and linkable URL hash state
@@ -41,6 +44,9 @@ const EXIF_HEAD_BYTES     = 256 * 1024;        // EXIF lives in the first 64 KB 
 const FULL_SCAN_MAX_BYTES = 25 * 1024 * 1024;  // PNG/WebP may store EXIF at the end
 const META_CONCURRENCY    = 4;
 const VIEWS               = ["slideshow", "thumbnails", "feed"];
+const THUMB_HEIGHT        = 512;               // px; sharp in a 3x phone tile, even for portrait photos
+const THUMB_CACHE         = "Gallery_thumbs";  // Cache Storage name for the small copies
+const THUMB_WORKER        = "Gallery_utils/Gallery_thumbs.js";
 
 /* ============================================================
    STATE
@@ -62,6 +68,14 @@ let pendingHash  = null;  // hash state to apply once photos load
 let loadNotices  = [];    // problems with the captions file
 let clockTimer   = null;
 const loadedSrcs = new Set(); // photo URLs already downloaded on this visit
+const thumbUrls  = new Map(); // photo SHA (or path) → object URL of its small copy
+let thumbWorker  = null;      // null = not started yet, false = unavailable
+const thumbJobs  = new Map(); // worker job id → { resolve, reject }
+let thumbJobId   = 0;
+let thumbCache   = null;      // Promise of the Cache Storage cache (or null)
+let thumbObserver = null;     // starts tiles as they near the screen
+let thumbQueue   = [];        // grid images waiting for their small copy
+let thumbBusy    = false;
 
 /* ============================================================
    HELPERS
@@ -867,9 +881,12 @@ function renderThumbnails() {
   viewPhotos.forEach((photo, i) => {
     const month = monthLabel(photo);
     if (!groups.length || groups[groups.length - 1].month !== month) groups.push({ month, tiles: [] });
+    // Tiles start empty and get their small copy from watchThumbs, unless
+    // it was already made on this visit.
+    const ready = thumbUrls.get(thumbKey(photo));
     groups[groups.length - 1].tiles.push(`
   <button class="thumb" data-act="open" data-index="${i}">
-    <img src="${escHtml(photoUrl(photo.path))}" data-path="${escHtml(photo.path)}" alt="${escHtml(altText(photo))}" loading="lazy" decoding="async">
+    <img${ready ? ` src="${escHtml(ready)}"` : ""} data-path="${escHtml(photo.path)}" alt="${escHtml(altText(photo))}" loading="lazy" decoding="async">
   </button>`);
   });
 
@@ -881,11 +898,177 @@ function renderThumbnails() {
     parts.push(`<div class="thumb-grid${gap}">${group.tiles.join("")}</div>`);
   });
   wrapper.innerHTML = parts.join("");
+  watchThumbs();
 }
 
 function focusCurrentThumb() {
   const thumb = document.querySelector(`.thumb[data-index="${slideIndex}"]`);
   if (thumb) thumb.focus();
+}
+
+/* ============================================================
+   THUMBNAILS — small copies for the grid
+   A grid of full-size photos is more than a phone can hold in memory
+   (Safari reloads the page, then gives up with "A problem repeatedly
+   occurred"). So each tile gets a small JPEG instead, made by a worker one
+   photo at a time as tiles near the screen. Copies are kept for the visit
+   and in Cache Storage by git blob SHA, so a photo is only shrunk again
+   after it changes. Without a worker (a page opened from disk, or a very
+   old browser) the tiles show the photos themselves.
+   ============================================================ */
+
+function thumbKey(photo) {
+  return photo.sha || photo.path;
+}
+
+/** Cache Storage key for a photo's small copy; only photos with a SHA are stored. */
+function thumbCacheUrl(photo) {
+  if (!photo.sha) return null;
+  return new URL(`${photoUrl(photo.path)}?thumb=${photo.sha}&h=${THUMB_HEIGHT}`, location.href).href;
+}
+
+function openThumbCache() {
+  if (!thumbCache) {
+    thumbCache = (window.caches ? caches.open(THUMB_CACHE) : Promise.resolve(null)).catch(() => null);
+  }
+  return thumbCache;
+}
+
+async function readStoredThumb(photo) {
+  const key   = thumbCacheUrl(photo);
+  const cache = key && await openThumbCache();
+  if (!cache) return null;
+  try {
+    const res = await cache.match(key);
+    return res ? await res.blob() : null;
+  } catch { return null; }
+}
+
+async function storeThumb(photo, blob) {
+  const key   = thumbCacheUrl(photo);
+  const cache = key && await openThumbCache();
+  if (!cache) return;
+  try { await cache.put(key, new Response(blob, { headers: { "Content-Type": "image/jpeg" } })); } catch {}
+}
+
+/** Drop stored copies of photos that have since changed or been removed. */
+async function pruneStoredThumbs(photos) {
+  const cache = await openThumbCache();
+  if (!cache) return;
+  const keep = new Set(photos.map(thumbCacheUrl));
+  try {
+    for (const req of await cache.keys()) {
+      if (!keep.has(req.url)) await cache.delete(req);
+    }
+  } catch {}
+}
+
+/** Pages opened from disk can't start workers, and very old browsers lack the APIs. */
+function canShrinkPhotos() {
+  return thumbWorker !== false && !isFilePage() &&
+         !!(window.Worker && window.OffscreenCanvas && window.createImageBitmap);
+}
+
+/** The worker, started on first use. */
+function getThumbWorker() {
+  if (thumbWorker !== null || !canShrinkPhotos()) return thumbWorker;
+  try {
+    const worker = new Worker(THUMB_WORKER);
+    worker.onmessage = e => {
+      const job = thumbJobs.get(e.data.id);
+      if (!job) return;
+      thumbJobs.delete(e.data.id);
+      if (e.data.blob) job.resolve(e.data.blob);
+      else job.reject(new Error(e.data.error));
+    };
+    worker.onerror = () => {                   // the worker script didn't load
+      thumbWorker = false;
+      for (const job of thumbJobs.values()) job.reject(new Error("thumbnail worker failed"));
+      thumbJobs.clear();
+    };
+    thumbWorker = worker;
+  } catch {
+    thumbWorker = false;
+  }
+  return thumbWorker;
+}
+
+function shrinkPhoto(photo) {
+  const worker = getThumbWorker();
+  if (!worker) return Promise.reject(new Error("no thumbnail worker"));
+  return new Promise((resolve, reject) => {
+    const id = ++thumbJobId;
+    thumbJobs.set(id, { resolve, reject });
+    worker.postMessage({ id, url: new URL(photoUrl(photo.path), location.href).href, height: THUMB_HEIGHT });
+  });
+}
+
+async function thumbUrlFor(photo) {
+  const key = thumbKey(photo);
+  if (thumbUrls.has(key)) return thumbUrls.get(key);
+  let blob = await readStoredThumb(photo);
+  if (!blob) {
+    blob = await shrinkPhoto(photo);
+    storeThumb(photo, blob);
+  }
+  const url = URL.createObjectURL(blob);
+  thumbUrls.set(key, url);
+  return url;
+}
+
+/** Give the grid's empty tiles their small copies as they come near the screen. */
+function watchThumbs() {
+  const imgs = [...document.querySelectorAll(".thumb img:not([src])")];
+  if (!imgs.length) return;
+  if (!canShrinkPhotos()) {
+    imgs.forEach(img => { img.src = photoUrl(img.dataset.path); });
+    return;
+  }
+  if (!window.IntersectionObserver) {
+    thumbQueue.push(...imgs);
+    pumpThumbs();
+    return;
+  }
+  thumbObserver = new IntersectionObserver((entries, observer) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      observer.unobserve(entry.target);
+      thumbQueue.push(entry.target);
+    }
+    pumpThumbs();
+  }, { rootMargin: "100% 0px" });
+  imgs.forEach(img => thumbObserver.observe(img));
+}
+
+function stopThumbs() {
+  if (thumbObserver) thumbObserver.disconnect();
+  thumbObserver = null;
+  thumbQueue = [];
+}
+
+/** One photo at a time, so only one full-size photo is decoded at once. */
+async function pumpThumbs() {
+  if (thumbBusy) return;
+  thumbBusy = true;
+  while (thumbQueue.length) {
+    const img = thumbQueue.shift();
+    if (!img.isConnected || img.hasAttribute("src")) continue;
+    const photo = viewPhotos.find(p => p.path === img.dataset.path);
+    if (!photo) continue;
+    let url;
+    try {
+      url = await thumbUrlFor(photo);
+    } catch {
+      url = photoUrl(photo.path);             // couldn't shrink it — show the photo itself
+    }
+    if (img.isConnected) img.src = url;
+  }
+  thumbBusy = false;
+  // Nothing left to shrink: free the worker's memory until more tiles need it.
+  if (thumbWorker) {
+    thumbWorker.terminate();
+    thumbWorker = null;
+  }
 }
 
 /* ============================================================
@@ -976,6 +1159,7 @@ function render() {
   renderViewButtons();
   renderFilters();
   renderLastUpdated();
+  stopThumbs();
   if (activeView === "feed") renderFeed();
   else if (activeView === "thumbnails") renderThumbnails();
   else renderSlideshow();
@@ -1307,6 +1491,7 @@ async function loadGallery(force = false) {
     allPhotos = photos;
     sortPhotos();
     buildTagIndex();
+    if (listingInfo.source === "github") pruneStoredThumbs(allPhotos);
 
     if (pendingHash) {
       if (VIEWS.includes(pendingHash.view)) activeView = pendingHash.view;
