@@ -346,6 +346,8 @@ button { font-family: var(--font); }
   height: 100%;
   object-fit: cover;
 }
+/* Empty until its small copy is ready — no alt text or broken-image icon. */
+.thumb img:not([src]) { visibility: hidden; }
 .thumb::after {
   content: "";
   position: absolute;
