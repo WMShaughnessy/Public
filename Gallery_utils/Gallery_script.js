@@ -60,6 +60,8 @@ let fullClosesViewer = false; // viewer was opened straight into full screen
 let listingInfo  = null;  // { savedAt, fromCache, stale, error }
 let pendingHash  = null;  // hash state to apply once photos load
 let loadNotices  = [];    // problems with the captions file
+let clockTimer   = null;
+const loadedSrcs = new Set(); // photo URLs already downloaded on this visit
 
 /* ============================================================
    HELPERS
@@ -701,19 +703,26 @@ function writeHash() {
    ============================================================ */
 
 function renderHeader() {
-  const now     = new Date();
-  const dateStr = now.toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric", year:"numeric" });
-  const timeStr = now.toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit" });
-
   const titleEl = document.getElementById("header-title");
   if (titleEl) titleEl.innerHTML = '<a href="index.html" style="color:inherit;text-decoration:none;">' + escHtml(CFG.title) + '</a>';
   document.title = CFG.title;
+  renderClock();
+}
+
+/** Header date and time, redrawn at the start of every minute. */
+function renderClock() {
+  const now     = new Date();
+  const dateStr = now.toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric", year:"numeric" });
+  const timeStr = now.toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit" });
 
   const dateEl = document.getElementById("header-date");
   if (dateEl) dateEl.textContent = dateStr.toUpperCase();
 
   const timeEl = document.getElementById("header-time");
   if (timeEl) timeEl.textContent = timeStr;
+
+  clearTimeout(clockTimer);
+  clockTimer = setTimeout(renderClock, 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()));
 }
 
 function renderStatsBar() {
@@ -840,6 +849,7 @@ function preloadNeighbors() {
   for (const d of [1, -1]) {
     const img = new Image();
     img.decoding = "async";
+    img.onload = () => loadedSrcs.add(img.src);
     img.src = photoUrl(viewPhotos[(slideIndex + d + n) % n].path);
   }
 }
@@ -1083,6 +1093,7 @@ function closeViewer() {
   const img = document.getElementById("viewer-img");
   img.removeAttribute("src");
   delete img.dataset.path;
+  setViewerStatus("");
   if (activeView === "slideshow") {
     renderSlideshow();
   } else {
@@ -1135,15 +1146,41 @@ function renderViewer() {
   document.getElementById("viewer-count").textContent = `${slideIndex + 1} / ${n}`;
 
   if (img.dataset.path !== photo.path) {
-    img.dataset.path = photo.path;
+    const path = photo.path;
+    let retried = false;
+    img.dataset.path = path;
     delete img.dataset.remote;
-    img.src = photoUrl(photo.path);
+    img.onload = () => {
+      if (img.dataset.path === path) setViewerStatus("");
+    };
+    img.onerror = () => {
+      if (img.dataset.path !== path) return;
+      // Opened from disk, the error handler in initInput has just retried
+      // the photo from GitHub — keep waiting for that copy.
+      if (img.dataset.remote && !retried) { retried = true; return; }
+      setViewerStatus("failed");
+    };
+    img.src = photoUrl(path);
+    // A photo already downloaded (preloaded, or seen in another view) shows
+    // at once, with no spinner.
+    setViewerStatus(img.complete || loadedSrcs.has(img.src) ? "" : "loading");
   }
   img.alt = altText(photo);
 
   const caption = document.getElementById("viewer-caption");
   caption.innerHTML = detailsHtml(photo) + captionHtml(photo);   // empty → bar hidden
   preloadNeighbors();
+}
+
+/** Hide the previous photo while the next one loads, and say if it can't. */
+function setViewerStatus(state) {
+  const stage  = document.getElementById("viewer-stage");
+  const status = document.getElementById("viewer-status");
+  stage.classList.toggle("is-loading", state === "loading");
+  stage.classList.toggle("is-failed", state === "failed");
+  status.innerHTML =
+    state === "loading" ? `<div class="viewer-spinner"></div><span>Loading photo…</span>` :
+    state === "failed"  ? `<span>⚠ This photo could not be loaded</span>` : "";
 }
 
 function onFullscreenChange() {
@@ -1227,6 +1264,10 @@ function initInput() {
     else if (e.key === "Escape" && viewerMode) leaveViewer();
   });
 
+  document.addEventListener("load", e => {
+    if (e.target instanceof HTMLImageElement && e.target.dataset.path) loadedSrcs.add(e.target.src);
+  }, true);
+
   // Opened from disk: a listed photo missing from this copy is shown from GitHub.
   document.addEventListener("error", e => {
     const img = e.target;
@@ -1237,6 +1278,9 @@ function initInput() {
 
   document.addEventListener("fullscreenchange", onFullscreenChange);
   document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+
+  // Background tabs run timers late; catch the clock up on return.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) renderClock(); });
 }
 
 /* ============================================================

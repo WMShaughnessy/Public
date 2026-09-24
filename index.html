@@ -389,12 +389,20 @@
 </div>
 
 <script>
-  // Date & time display
-  const now = new Date();
-  const dateOpts = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-  document.getElementById('header-date').textContent = now.toLocaleDateString('en-US', dateOpts).toUpperCase();
-  const timeOpts = { hour: 'numeric', minute: '2-digit', hour12: true };
-  document.getElementById('header-time').textContent = now.toLocaleTimeString('en-US', timeOpts).toUpperCase();
+  // Date & time display, redrawn at the start of every minute
+  let clockTimer = null;
+  function renderClock() {
+    const now = new Date();
+    const dateOpts = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    document.getElementById('header-date').textContent = now.toLocaleDateString('en-US', dateOpts).toUpperCase();
+    const timeOpts = { hour: 'numeric', minute: '2-digit', hour12: true };
+    document.getElementById('header-time').textContent = now.toLocaleTimeString('en-US', timeOpts).toUpperCase();
+    clearTimeout(clockTimer);
+    clockTimer = setTimeout(renderClock, 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()));
+  }
+  renderClock();
+  // Background tabs run timers late; catch the clock up on return.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) renderClock(); });
 </script>
 </body>
 </html>

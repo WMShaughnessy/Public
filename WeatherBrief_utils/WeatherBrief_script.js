@@ -738,13 +738,21 @@ function onDurationChange(durId) {
    ============================================================ */
 
 function renderHeader() {
+  document.getElementById("header-title").innerHTML = '<a href="index.html" style="color:inherit;text-decoration:none;">' + CFG.title + '</a>';
+  document.title = CFG.title;
+  renderClock();
+}
+
+/** Header date and time, redrawn at the start of every minute. */
+let clockTimer = null;
+function renderClock() {
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const timeStr = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  document.getElementById("header-title").innerHTML = '<a href="index.html" style="color:inherit;text-decoration:none;">' + CFG.title + '</a>';
-  document.title = CFG.title;
   document.getElementById("header-date").textContent = dateStr.toUpperCase();
   document.getElementById("header-time").textContent = timeStr;
+  clearTimeout(clockTimer);
+  clockTimer = setTimeout(renderClock, 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()));
 }
 
 function renderLastUpdated() {
@@ -1583,7 +1591,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // likely to be wrong -- the laptop was shut in one city and opened in
   // another. Re-check instead of trusting whatever is on screen.
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && !isLoading && !readGeoCache()) loadWeather();
+    if (document.visibilityState !== "visible") return;
+    renderClock();                     // background tabs run timers late
+    if (!isLoading && !readGeoCache()) loadWeather();
   });
 
   loadWeather();
