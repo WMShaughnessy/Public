@@ -7,7 +7,7 @@
  * Features:
  *  - Folder listing via the GitHub API (one request, cached in localStorage)
  *  - Subfolders are albums; the folder name is a tag on every photo inside
- *  - Optional sidecar text file per photo (Title / Caption / Tags / Date)
+ *  - One optional gallery.json for titles, captions, tags and dates
  *  - Photo date read from EXIF metadata (JPEG, PNG, WebP), cached per file
  *  - Views: Slideshow (default), chronological Feed
  *  - Album / tag filters shared by both views
@@ -25,6 +25,7 @@ const DEFAULT_CONFIG = {
   repo: "Public",
   branch: "main",
   imagesDir: "Gallery_images",
+  captionsFile: "gallery.json",
   cacheTTLMinutes: 15,
   defaultView: "slideshow",
   newestFirst: true,
@@ -58,6 +59,7 @@ let viewerMode   = null;  // null (closed) | "native" | "fit"
 let fsOwnedByViewer = false;
 let listingInfo  = null;  // { savedAt, fromCache, stale, error }
 let pendingHash  = null;  // hash state to apply once photos load
+let loadNotices  = [];    // problems with the captions file
 
 /* ============================================================
    HELPERS
@@ -333,29 +335,77 @@ async function readExifDate(photo) {
 }
 
 /* ============================================================
-   SIDECAR TEXT FILES
-   photo.jpg + photo.txt:
-     Title: Optional headline
-     Caption: Free text — any line without a key continues the caption.
-     Tags: nyc, sunset, water
-     Date: 2024-05-12 18:42   (optional; overrides the photo's metadata)
+   CAPTIONS FILE — one JSON file for the whole gallery
+   (Gallery_images/gallery.json), keyed by photo path:
+   {
+     "sunset.jpg": {
+       "title":   "Optional headline",
+       "caption": "Free text. Use \n for a line break.",
+       "tags":    ["NYC", "Sunset"],
+       "date":    "2024-05-12 18:42"      (optional; overrides metadata)
+     },
+     "Iceland 2025/glacier.jpg": { "caption": "…" }
+   }
+   Keys match the path inside the photo folder; a bare file name also
+   works when it is unique. Matching ignores upper/lower case.
    ============================================================ */
 
-function parseSidecar(text) {
-  const out = { title: "", caption: "", tags: [], date: null };
-  const captionLines = [];
-  for (const raw of text.replace(/^﻿/, "").split(/\r?\n/)) {
-    const m = /^\s*(title|caption|tags?|date)\s*:\s*(.*)$/i.exec(raw);
-    if (!m) { captionLines.push(raw.trim()); continue; }
-    const key = m[1].toLowerCase();
-    const val = m[2].trim();
-    if (key === "title")        out.title = val;
-    else if (key === "date")    out.date  = parseLooseDate(val);
-    else if (key === "caption") captionLines.push(val);
-    else out.tags.push(...val.split(/[,;]/).map(s => s.trim().replace(/^#/, "")).filter(Boolean));
+function toText(value) {
+  if (Array.isArray(value)) return value.map(toText).join("\n");
+  return value === null || value === undefined ? "" : String(value).trim();
+}
+
+function normalizeCaptionEntry(raw) {
+  if (typeof raw === "string") raw = { caption: raw };
+  if (!raw || typeof raw !== "object") return null;
+  const tags = Array.isArray(raw.tags) ? raw.tags : String(raw.tags || "").split(/[,;]/);
+  return {
+    title:   toText(raw.title),
+    caption: toText(raw.caption),
+    tags:    tags.map(t => toText(t).replace(/^#/, "")).filter(Boolean),
+    date:    raw.date ? parseLooseDate(String(raw.date)) : null,
+  };
+}
+
+/** Parse gallery.json into a map of lower-cased key → entry, plus any problems. */
+function parseCaptions(text) {
+  let data;
+  try {
+    data = JSON.parse(text.replace(/^﻿/, ""));
+  } catch (err) {
+    return { map: new Map(), error: `${CFG.captionsFile} has a formatting error (${err.message}) — captions and tags are not shown` };
   }
-  out.caption = captionLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-  return out;
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return { map: new Map(), error: `${CFG.captionsFile} must be a { "photo.jpg": { … } } object` };
+  }
+  const map = new Map();
+  for (const [key, raw] of Object.entries(data)) {
+    const entry = normalizeCaptionEntry(raw);
+    if (entry) map.set(key.trim().replace(/^\/+/, "").toLowerCase(), entry);
+  }
+  return { map, error: null };
+}
+
+async function loadCaptions(fileEntry, cache, keep) {
+  if (!fileEntry) return { map: new Map(), error: null };
+  const key = "j:" + fileEntry.sha;
+  let text = typeof cache[key] === "string" ? cache[key] : null;
+  if (text === null) {
+    try {
+      const res = await fetch(photoUrl(fileEntry.path), { cache: "no-store" });
+      if (res.ok) text = await res.text();
+    } catch {}
+  }
+  if (text === null) return { map: new Map(), error: `Could not read ${CFG.captionsFile} — try Refresh in a minute` };
+  keep[key] = text;
+  return parseCaptions(text);
+}
+
+/** Warn about entries that match no photo, so typos in file names are visible. */
+function unmatchedCaptionKeys(map, photos) {
+  const paths = new Set(photos.map(p => p.path.toLowerCase()));
+  const names = new Set(photos.map(p => p.name.toLowerCase()));
+  return [...map.keys()].filter(k => !paths.has(k) && !names.has(k));
 }
 
 /* ============================================================
@@ -405,28 +455,26 @@ async function fetchListing(force) {
 }
 
 function buildPhotos(entries) {
-  const texts  = new Map();   // lower-cased path without extension → entry
+  const captionsName = CFG.captionsFile.toLowerCase();
+  let captionsEntry = null;
   const images = [];
   for (const e of entries) {
+    if (e.path.toLowerCase() === captionsName) { captionsEntry = e; continue; }
     const parts = e.path.split("/");
     // Skip hidden files and anything GitHub Pages (Jekyll) won't publish.
     if (parts.some(p => /^[._#~]/.test(p))) continue;
-    const ext = extOf(e.path);
-    if (IMAGE_EXTS.has(ext)) images.push(e);
-    else if (ext === "txt") texts.set(stripExt(e.path).toLowerCase(), e);
+    if (IMAGE_EXTS.has(extOf(e.path))) images.push(e);
   }
 
-  return images.map(e => {
+  const photos = images.map(e => {
     const folders = e.path.split("/");
     const name    = folders.pop();
-    const sidecar = texts.get(stripExt(e.path).toLowerCase()) || texts.get(e.path.toLowerCase()) || null;
     return {
       path: e.path,
       name,
       sha: e.sha,
       size: e.size,
       folders,
-      sidecar,
       title: "",
       caption: "",
       tags: [],
@@ -434,6 +482,7 @@ function buildPhotos(entries) {
       hasTime: false,
     };
   });
+  return { photos, captionsEntry };
 }
 
 async function runPool(tasks, limit) {
@@ -448,35 +497,30 @@ async function runPool(tasks, limit) {
 }
 
 /**
- * Fill in sidecar text and EXIF dates. Both are cached by git blob SHA, so
- * a file is only re-read after it changes. Failures (e.g. a photo pushed
- * moments ago that Pages hasn't published yet) are not cached.
+ * Fill in captions and EXIF dates. The captions file and each photo's date
+ * are cached by git blob SHA, so a file is only re-read after it changes.
+ * Failures (e.g. a photo pushed moments ago that Pages hasn't published
+ * yet) are not cached. Returns any problems to show above the photos.
  */
-async function loadMetadata(photos, onProgress) {
+async function loadMetadata(photos, captionsEntry, onProgress) {
   const cache = readJSON(META_CACHE_KEY) || {};
   const keep  = {};
+  const notices = [];
   let done = 0;
 
+  const captions = await loadCaptions(captionsEntry, cache, keep);
+  if (captions.error) notices.push(captions.error);
+  const unmatched = unmatchedCaptionKeys(captions.map, photos);
+  if (unmatched.length) {
+    notices.push(`${CFG.captionsFile}: no photo named ${unmatched.map(k => `“${k}”`).join(", ")}`);
+  }
+
   const tasks = photos.map(photo => async () => {
-    let sidecar = null;
-    if (photo.sidecar) {
-      const key = "t:" + photo.sidecar.sha;
-      let text = typeof cache[key] === "string" ? cache[key] : null;
-      if (text === null) {
-        try {
-          const res = await fetch(photoUrl(photo.sidecar.path));
-          if (res.ok) text = await res.text();
-        } catch {}
-      }
-      if (text !== null) {
-        keep[key] = text;
-        sidecar = parseSidecar(text);
-      }
-    }
+    const info = captions.map.get(photo.path.toLowerCase()) || captions.map.get(photo.name.toLowerCase()) || null;
 
     const exifKey = "x:" + photo.sha;
     let exif = cache[exifKey];
-    if (exif === undefined && !(sidecar && sidecar.date)) {
+    if (exif === undefined && !(info && info.date)) {
       try {
         const found = await readExifDate(photo);
         exif = found ? { d: found.iso, t: found.hasTime } : { d: null };
@@ -487,17 +531,17 @@ async function loadMetadata(photos, onProgress) {
     if (exif !== undefined) keep[exifKey] = exif;
 
     const exifDate = exif && exif.d ? { iso: exif.d, hasTime: exif.t !== false } : null;
-    const date = (sidecar && sidecar.date) || exifDate || dateFromFilename(photo.name);
+    const date = (info && info.date) || exifDate || dateFromFilename(photo.name);
     photo.date    = date ? date.iso : null;
     photo.hasTime = date ? date.hasTime : false;
 
-    photo.title   = sidecar ? sidecar.title : "";
-    photo.caption = sidecar ? sidecar.caption : "";
+    photo.title   = info ? info.title : "";
+    photo.caption = info ? info.caption : "";
     const seen = new Set();
     photo.tags = [];
     for (const [label, album] of [
       ...photo.folders.map(f => [f, true]),
-      ...(sidecar ? sidecar.tags : []).map(t => [t, false]),
+      ...(info ? info.tags : []).map(t => [t, false]),
     ]) {
       const key = tagKey(label);
       if (!key || seen.has(key)) continue;
@@ -510,6 +554,7 @@ async function loadMetadata(photos, onProgress) {
 
   await runPool(tasks, META_CONCURRENCY);
   writeJSON(META_CACHE_KEY, keep);
+  return notices;
 }
 
 /* ============================================================
@@ -761,8 +806,9 @@ function renderFeed() {
    ============================================================ */
 
 function noticeHtml() {
-  if (!listingInfo || !listingInfo.stale) return "";
-  return `<div class="notice-card">⚠ Showing saved listing · ${escHtml(listingInfo.error || "GitHub unavailable")}</div>`;
+  const notices = loadNotices.slice();
+  if (listingInfo && listingInfo.stale) notices.unshift(`Showing saved listing · ${listingInfo.error || "GitHub unavailable"}`);
+  return notices.map(n => `<div class="notice-card">⚠ ${escHtml(n)}</div>`).join("");
 }
 
 function emptyHtml() {
@@ -1111,9 +1157,9 @@ async function loadGallery(force = false) {
 
   try {
     listingInfo = await fetchListing(force);
-    const photos = buildPhotos(listingInfo.entries);
+    const { photos, captionsEntry } = buildPhotos(listingInfo.entries);
     if (photos.length) updateProgress(0, photos.length);
-    await loadMetadata(photos, updateProgress);
+    loadNotices = await loadMetadata(photos, captionsEntry, updateProgress);
 
     allPhotos = photos;
     sortPhotos();

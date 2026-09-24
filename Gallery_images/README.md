@@ -8,33 +8,49 @@ use **↻ Refresh** on the page to check sooner).
 
 ```
 Gallery_images/
-  sunset.jpg            ← a photo
-  sunset.txt            ← optional caption/tag file (same name, .txt)
+  gallery.json          ← titles, captions and tags for every photo (optional)
+  sunset.jpg
   Iceland 2025/         ← a subfolder is an album
     glacier.jpg            every photo inside gets the tag "Iceland 2025"
-    glacier.txt
 ```
 
 - Photo types: `.jpg` `.jpeg` `.png` `.webp` `.gif` `.avif`
 - File or folder names starting with `.` or `_` are ignored (GitHub Pages
   does not publish them).
 
-## Caption / tag file
+## gallery.json
 
-Plain text, same name as the photo with `.txt` (`sunset.txt` or
-`sunset.jpg.txt`). Every line is optional:
+One file for the whole gallery. Each photo is listed by file name; photos
+not listed simply show without a caption. Every field is optional:
 
+```json
+{
+  "sunset.jpg": {
+    "title": "Sunset over the Hudson",
+    "caption": "From Pier 45, just after the rain.",
+    "tags": ["NYC", "Sunset", "Water"]
+  },
+  "Iceland 2025/glacier.jpg": {
+    "caption": "Sólheimajökull.\nSecond line of the caption.",
+    "tags": ["Ice", "Water"],
+    "date": "2025-03-01 10:00"
+  },
+  "IMG_4411.jpg": "A caption on its own can be written as plain text."
+}
 ```
-Title: Sunset over the Hudson
-Caption: From Pier 45, just after the rain.
-Any line without a key continues the caption.
-Tags: NYC, Sunset, Water
-Date: 2024-05-12 18:42
-```
 
-- **Tags** — comma separated. The album folder name is added automatically.
+- **Names** — the path inside `Gallery_images/`. For photos in an album,
+  the file name alone (`"glacier.jpg"`) also works as long as no other photo
+  has the same name. Upper/lower case doesn't matter.
+- **Caption** — `\n` starts a new line (or give a list of lines).
+- **Tags** — a list, or one comma-separated string (`"NYC, Sunset"`). The
+  album folder name is added automatically.
 - **Date** — only needed to override the photo. `YYYY-MM-DD`, optionally
   followed by `HH:MM`.
+- JSON is strict: quote every name and value, put commas between entries,
+  and no comma after the last one. If the file has a mistake, or lists a
+  name that matches no photo, the gallery shows a warning above the photos
+  instead of breaking.
 
 ## Dates
 

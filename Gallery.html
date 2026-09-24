@@ -81,7 +81,8 @@
      CONFIGURATION
      Photos are listed from the repo folder below via the GitHub
      API, so new photos only need to be pushed — no code changes.
-     See Gallery_images/README.md for the caption/tag file format.
+     Titles, captions and tags go in Gallery_images/gallery.json —
+     see Gallery_images/README.md for the format.
      ============================================================ -->
 <script>
 window.GALLERY_CONFIG = {
@@ -90,6 +91,7 @@ window.GALLERY_CONFIG = {
   repo: "Public",               // this repo
   branch: "main",               // branch GitHub Pages publishes
   imagesDir: "Gallery_images",  // photo folder (subfolders = albums)
+  captionsFile: "gallery.json", // captions/tags file inside that folder
   cacheTTLMinutes: 15,          // how long the folder listing is cached
   defaultView: "slideshow",     // "slideshow" or "feed"
   newestFirst: true,
