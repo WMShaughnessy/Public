@@ -4,8 +4,8 @@
     <rect width="64" height="64" fill="#1B4B9A"/>
     <path d="M0 38A26 26 0 0 1 26 64H0Z" fill="#D92121"/>
     <path d="M0 20A44 44 0 0 1 44 64H26A26 26 0 0 0 0 38Z" fill="#F7D500"/>
+    <g transform="translate(4 4)"><rect width="32" height="46" fill="#1A1A1A" transform="translate(22 8) rotate(-8 14.4 20.7) scale(0.9)"/></g>
     <g transform="translate(22 8) rotate(-8 14.4 20.7) scale(0.9)">
-      <rect x="6" y="6" width="32" height="46" fill="#1A1A1A"/>
       <rect width="32" height="46" fill="#F4EFE4"/>
       <rect x="4" y="4" width="24" height="6" fill="#1A1A1A"/>
       <rect x="4" y="14" width="12" height="12" fill="#D92121"/>
