@@ -51,6 +51,7 @@ let activeSource     = null; // source name string or null
 let isLoading        = false;
 let feedStatuses     = [];   // [{ name, category, ok, count, error, fromCache }]
 let sourcesOpen      = false;
+let clockTimer       = null;
 
 /* ============================================================
    HELPERS
@@ -682,19 +683,26 @@ async function fetchFeed(source) {
    ============================================================ */
 
 function renderHeader() {
-  const now     = new Date();
-  const dateStr = now.toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric", year:"numeric" });
-  const timeStr = now.toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit" });
-
   const titleEl = document.getElementById("header-title");
   if (titleEl) titleEl.innerHTML = '<a href="index.html" style="color:inherit;text-decoration:none;">' + CFG.title + '</a>';
   document.title = CFG.title;
+  renderClock();
+}
+
+/** Header date and time, redrawn at the start of every minute. */
+function renderClock() {
+  const now     = new Date();
+  const dateStr = now.toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric", year:"numeric" });
+  const timeStr = now.toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit" });
 
   const dateEl = document.getElementById("header-date");
   if (dateEl) dateEl.textContent = dateStr.toUpperCase();
 
   const timeEl = document.getElementById("header-time");
   if (timeEl) timeEl.textContent = timeStr;
+
+  clearTimeout(clockTimer);
+  clockTimer = setTimeout(renderClock, 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()));
 }
 
 /* ============================================================
@@ -1220,6 +1228,9 @@ async function loadAllFeeds(force = false) {
 document.addEventListener("DOMContentLoaded", () => {
   renderHeader();
   initSourcesToggle();
+
+  // Background tabs run timers late; catch the clock up on return.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) renderClock(); });
 
   const refreshBtn = document.getElementById("refresh-btn");
   if (refreshBtn) {
