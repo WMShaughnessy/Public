@@ -72,5 +72,8 @@ not listed simply show without a caption. Every field is optional:
 
 The date is read from the photo's metadata (EXIF "Date Taken"), so keep that
 field when cleaning the other details. If it's missing, the page falls back to
-a date in the file name (e.g. `IMG_20240512_184207.jpg`), and otherwise lists
-the photo as *Undated* at the end.
+a date in the file name (e.g. `IMG_20240512_184207.jpg`). A photo with no
+date shows without one and is placed after the dated photos.
+
+Any field a photo doesn't have (date, title, caption, tags) is simply left
+off — nothing is shown in its place.

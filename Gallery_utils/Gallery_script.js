@@ -187,14 +187,14 @@ function dateParts(iso) {
 }
 
 function formatPhotoDate(photo) {
-  if (!photo.date) return "Undated";
+  if (!photo.date) return "";
   const opts = { weekday: "short", month: "short", day: "numeric", year: "numeric" };
   if (photo.hasTime) Object.assign(opts, { hour: "numeric", minute: "2-digit" });
   return dateParts(photo.date).toLocaleString("en-US", opts);
 }
 
 function monthLabel(photo) {
-  if (!photo.date) return "Undated";
+  if (!photo.date) return "";
   return dateParts(photo.date).toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
@@ -777,16 +777,18 @@ function tagChipsHtml(photo) {
     .join("");
 }
 
-function detailsHtml(photo, { withTime = true } = {}) {
-  return `
-    ${withTime ? `<div class="card-time">${escHtml(formatPhotoDate(photo))}</div>` : ""}
-    <div class="card-meta">${tagChipsHtml(photo)}</div>`;
+/* Each field renders only when the photo has it — no placeholders. */
+
+function detailsHtml(photo) {
+  const date = formatPhotoDate(photo);
+  const tags = tagChipsHtml(photo);
+  return (date ? `<div class="card-time">${escHtml(date)}</div>` : "") +
+         (tags ? `<div class="card-meta">${tags}</div>` : "");
 }
 
 function captionHtml(photo) {
-  return `
-    ${photo.title   ? `<div class="card-title">${escHtml(photo.title)}</div>` : ""}
-    ${photo.caption ? `<div class="card-preview">${escHtml(photo.caption)}</div>` : ""}`;
+  return (photo.title   ? `<div class="card-title">${escHtml(photo.title)}</div>` : "") +
+         (photo.caption ? `<div class="card-preview">${escHtml(photo.caption)}</div>` : "");
 }
 
 function altText(photo) {
@@ -855,12 +857,15 @@ function renderFeed() {
   let lastMonth = null;
   viewPhotos.forEach((photo, i) => {
     const month = monthLabel(photo);
+    let gap = "";
     if (month !== lastMonth) {
-      parts.push(`<div class="feed-month">${escHtml(month)}</div>`);
+      // Undated photos get no heading, just the same gap a heading leaves.
+      if (month) parts.push(`<div class="feed-month">${escHtml(month)}</div>`);
+      else if (lastMonth) gap = " feed-card-gap";
       lastMonth = month;
     }
     parts.push(`
-<div class="article-card feed-card">
+<div class="article-card feed-card${gap}">
   <div class="card-accent ${colorForIndex(i)}"></div>
   <div class="card-body">
     ${detailsHtml(photo)}
@@ -1120,7 +1125,7 @@ function renderViewer() {
   img.alt = altText(photo);
 
   const caption = document.getElementById("viewer-caption");
-  caption.innerHTML = `${detailsHtml(photo)}${captionHtml(photo)}`.trim();
+  caption.innerHTML = detailsHtml(photo) + captionHtml(photo);   // empty → bar hidden
   preloadNeighbors();
 }
 

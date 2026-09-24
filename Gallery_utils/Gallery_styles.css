@@ -309,6 +309,7 @@ button { font-family: var(--font); }
   background: var(--white);
 }
 .feed-month:first-child { margin-top: 0; }
+.feed-card-gap { margin-top: 16px; }
 .feed-image {
   border: var(--border);
   background: var(--stage);
