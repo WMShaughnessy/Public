@@ -542,7 +542,6 @@ button { font-family: var(--font); }
   text-transform: uppercase;
   letter-spacing: 1px;
 }
-.picker-btn { margin-top: 16px; }
 .empty-detail {
   margin-top: 10px;
   font-size: 12px;

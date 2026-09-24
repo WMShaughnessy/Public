@@ -8,12 +8,16 @@ The live site reads this folder **on the `main` branch** — photos on another
 branch, or only on your computer, won't appear there until they're merged or
 pushed to `main`.
 
-To preview on your computer before pushing, open `Gallery.html` and click
-**Choose Folder**, then pick this `Gallery_images` folder (or the whole repo
-folder). Browsers show local images, but won't let a page look inside a
-folder until you choose it. After changing files, press **↻ Refresh** and
-choose the folder again. (If you run a local web server instead, such as
-`python3 -m http.server`, the page reads the folder without asking.)
+To preview locally before pushing, run a web server in the repo folder and
+open `http://localhost:8000/Gallery.html` — the page then reads your local
+`Gallery_images/` instead:
+
+```
+python3 -m http.server 8000
+```
+
+(Double-clicking `Gallery.html` to open it as a file won't work; browsers
+block a file page from reading the folder.)
 
 ## Layout
 

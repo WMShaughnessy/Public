@@ -60,8 +60,6 @@ let fsOwnedByViewer = false;
 let listingInfo  = null;  // { savedAt, fromCache, stale, error }
 let pendingHash  = null;  // hash state to apply once photos load
 let loadNotices  = [];    // problems with the captions file
-let pickedFolder = null;  // page opened as a file: { name, files: Map path → { file, url } }
-let folderInput  = null;
 
 /* ============================================================
    HELPERS
@@ -91,15 +89,7 @@ function encodePath(path) {
 }
 
 function photoUrl(path) {
-  if (pickedFolder) {
-    const picked = pickedFolder.files.get(path);
-    return picked ? picked.url : "";
-  }
   return `${encodePath(CFG.imagesDir)}/${encodePath(path)}`;
-}
-
-function isFilePage() {
-  return location.protocol === "file:";
 }
 
 function tagKey(label) {
@@ -335,18 +325,12 @@ async function fetchHead(url, maxBytes) {
 
 async function readExifDate(photo) {
   const url = photoUrl(photo.path);
-  let found = exifDateFromBuffer(photo.file
-    ? await photo.file.slice(0, EXIF_HEAD_BYTES).arrayBuffer()
-    : await fetchHead(url, EXIF_HEAD_BYTES));
+  let found = exifDateFromBuffer(await fetchHead(url, EXIF_HEAD_BYTES));
   const size = photo.size;                            // null when served from a local folder
   if (found === undefined && (size === null || (size > EXIF_HEAD_BYTES && size <= FULL_SCAN_MAX_BYTES))) {
-    if (photo.file) {
-      found = exifDateFromBuffer(await photo.file.arrayBuffer());
-    } else {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      found = exifDateFromBuffer(await res.arrayBuffer());
-    }
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    found = exifDateFromBuffer(await res.arrayBuffer());
   }
   return found || null;
 }
@@ -409,12 +393,8 @@ async function loadCaptions(fileEntry, cache, keep) {
   let text = key && typeof cache[key] === "string" ? cache[key] : null;
   if (text === null) {
     try {
-      if (fileEntry.file) {
-        text = await fileEntry.file.text();
-      } else {
-        const res = await fetch(`${encodePath(CFG.imagesDir)}/${encodePath(fileEntry.path)}`, { cache: "no-store" });
-        if (res.ok) text = await res.text();
-      }
+      const res = await fetch(photoUrl(fileEntry.path), { cache: "no-store" });
+      if (res.ok) text = await res.text();
     } catch {}
   }
   if (text === null) return { map: new Map(), error: `Could not read ${CFG.captionsFile} — try Refresh in a minute` };
@@ -484,11 +464,9 @@ function treeCacheId() {
 }
 
 async function fetchListing(force) {
-  if (isFilePage()) {
-    if (!pickedFolder) throw new NeedFolderError();
-    const entries = [...pickedFolder.files.entries()].map(([path, f]) => ({ path, sha: null, size: f.file.size, file: f.file }));
-    if (pickedFolder.captions) entries.push(pickedFolder.captions);
-    return { entries, savedAt: Date.now(), fromCache: false, source: "picked" };
+  if (location.protocol === "file:") {
+    throw new Error("This page was opened as a file on your computer, so it can't read the photo folder. " +
+                    "Open it from the GitHub Pages site, or run a local web server in the repo folder.");
   }
   if (!isGithubPages()) {
     try {
@@ -556,7 +534,6 @@ function buildPhotos(entries) {
       name,
       sha: e.sha,
       size: e.size,
-      file: e.file || null,
       folders,
       title: "",
       caption: "",
@@ -770,9 +747,7 @@ function renderLastUpdated() {
   const el = document.getElementById("last-updated");
   if (!el) return;
   if (!listingInfo) { el.textContent = ""; return; }
-  const label = listingInfo.source === "picked" ? `Folder: ${pickedFolder.name}`
-              : listingInfo.source === "local"  ? "Local folder"
-              : listingInfo.fromCache ? "Cached" : "Live";
+  const label = listingInfo.source === "local" ? "Local folder" : listingInfo.fromCache ? "Cached" : "Live";
   el.textContent = `${label} · ${relativeTime(listingInfo.savedAt)}`;
 }
 
@@ -899,12 +874,7 @@ function noticeHtml() {
 
 function emptyHtml() {
   if (activeTag) return `<div class="empty-state">No photos tagged “${escHtml(tagIndex.get(activeTag)?.label || activeTag)}”</div>`;
-  const source = listingInfo && listingInfo.source;
-  if (source === "picked") {
-    return `<div class="empty-state">No photos found<div class="empty-detail">No images in the folder you chose (${escHtml(pickedFolder.name)}).</div>` +
-           `<button class="refresh-btn picker-btn" data-act="pick-folder">Choose Another Folder</button></div>`;
-  }
-  const where = source === "local"
+  const where = listingInfo && listingInfo.source === "local"
     ? `Looked in ${CFG.imagesDir}/ on this server.`
     : `Looked in ${githubLocation()}. Photos appear here once they are pushed to that branch — use ↻ Refresh after pushing.`;
   return `<div class="empty-state">No photos found<div class="empty-detail">${escHtml(where)}</div></div>`;
@@ -1158,7 +1128,6 @@ function handleAction(btn) {
   else if (act === "fullscreen") viewerMode ? toggleViewerFullscreen() : openViewer("fit", true);
   else if (act === "close")      closeViewer();
   else if (act === "mode")       { viewerMode = viewerMode === "native" ? "fit" : "native"; renderViewer(); }
-  else if (act === "pick-folder") openFolderPicker();
   else if (act === "tag")        { if (viewerMode) closeViewer(); setTag(btn.dataset.tag === activeTag ? null : btn.dataset.tag); }
   else if (act === "open") {
     slideIndex = Number(btn.dataset.index) || 0;
@@ -1219,8 +1188,7 @@ function initInput() {
     slideIndex = Math.max(0, viewPhotos.indexOf(current));
     render();
   });
-  // A page opened as a file re-reads the folder by choosing it again.
-  document.getElementById("refresh-btn").addEventListener("click", () => isFilePage() ? openFolderPicker() : loadGallery(true));
+  document.getElementById("refresh-btn").addEventListener("click", () => loadGallery(true));
 
   document.addEventListener("keydown", e => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -1234,67 +1202,6 @@ function initInput() {
 
   document.addEventListener("fullscreenchange", onFullscreenChange);
   document.addEventListener("webkitfullscreenchange", onFullscreenChange);
-}
-
-/* ============================================================
-   LOCAL FOLDER (page opened as a file)
-   A page opened from disk can show local images, but the browser won't
-   let it look inside a folder or read files on its own. Picking the
-   folder once grants that, so the gallery can build from it.
-   ============================================================ */
-
-class NeedFolderError extends Error {}
-
-function showFolderPicker() {
-  const wrapper = document.getElementById("gallery-wrapper");
-  if (!wrapper) return;
-  wrapper.innerHTML = `
-<div class="empty-state">Choose your photo folder
-  <div class="empty-detail">This page was opened from your computer. Browsers show local images, but won't let a page look inside a folder until you choose it — pick your <b>${escHtml(CFG.imagesDir)}</b> folder to preview the gallery.</div>
-  <button class="refresh-btn picker-btn" data-act="pick-folder">Choose Folder</button>
-</div>`;
-}
-
-function openFolderPicker() {
-  if (!folderInput) {
-    folderInput = document.createElement("input");
-    folderInput.type = "file";
-    folderInput.multiple = true;
-    folderInput.webkitdirectory = true;
-    folderInput.hidden = true;
-    folderInput.addEventListener("change", () => {
-      if (folderInput.files.length) usePickedFiles(folderInput.files);
-      folderInput.value = "";
-    });
-    document.body.appendChild(folderInput);
-  }
-  folderInput.click();
-}
-
-function usePickedFiles(fileList) {
-  // webkitRelativePath is "<chosen folder>/<path inside it>".
-  let items = [...fileList].map(file => {
-    const parts = (file.webkitRelativePath || file.name).split("/");
-    return { root: parts.length > 1 ? parts.shift() : "", path: parts.join("/"), file };
-  });
-  // If the whole repo was chosen, use only its photo folder.
-  const prefix = CFG.imagesDir.replace(/\/+$/, "") + "/";
-  if (items.some(i => i.path.startsWith(prefix))) {
-    items = items.filter(i => i.path.startsWith(prefix)).map(i => ({ ...i, path: i.path.slice(prefix.length) }));
-  }
-
-  if (pickedFolder) pickedFolder.files.forEach(f => URL.revokeObjectURL(f.url));
-  const files = new Map();
-  let captions = null;
-  for (const { path, file } of items) {
-    if (path.toLowerCase() === CFG.captionsFile.toLowerCase()) {
-      captions = { path, sha: null, size: file.size, file };
-    } else if (IMAGE_EXTS.has(extOf(path))) {
-      files.set(path, { file, url: URL.createObjectURL(file) });
-    }
-  }
-  pickedFolder = { name: (items[0] && items[0].root) || CFG.imagesDir, files, captions };
-  loadGallery(true);
 }
 
 /* ============================================================
@@ -1335,8 +1242,7 @@ async function loadGallery(force = false) {
     render();
   } catch (err) {
     isLoading = false;
-    if (err instanceof NeedFolderError) showFolderPicker();
-    else showLoadError(`Could not load photos: ${err.message}`);
+    showLoadError(`Could not load photos: ${err.message}`);
     renderStatsBar();
   } finally {
     if (refreshBtn) refreshBtn.disabled = false;
