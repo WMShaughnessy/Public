@@ -10,9 +10,11 @@
  *  - One optional gallery.json for titles, captions, tags and dates
  *  - Photo date read from EXIF metadata (JPEG, PNG, WebP), cached per file
  *  - Views: Slideshow (default), Thumbnails grid, chronological Feed
- *  - Thumbnails show small copies made one at a time by a worker
- *    (Gallery_thumbs.js) and kept in Cache Storage, so phones never hold
- *    every full-size photo at once
+ *  - Thumbnails show small copies made on upload by a GitHub Action
+ *    (Gallery_thumbs/), or by a worker here until those are published, so
+ *    phones never hold every full-size photo at once
+ *  - Nothing saved on the device holds a photo: only the listing and
+ *    dates are cached, and the page's own photo reads skip the HTTP cache
  *  - Album / tag filters shared by every view
  *  - Expanded view (photo fitted to most of the screen) and Full Screen
  *  - Keyboard (← → Esc), swipe, auto-play, and linkable URL hash state
@@ -28,6 +30,7 @@ const DEFAULT_CONFIG = {
   repo: "Public",
   branch: "main",
   imagesDir: "Gallery_images",
+  thumbsDir: "Gallery_thumbs",
   captionsFile: "gallery.json",
   cacheTTLMinutes: 15,
   defaultView: "slideshow",
@@ -44,8 +47,7 @@ const EXIF_HEAD_BYTES     = 256 * 1024;        // EXIF lives in the first 64 KB 
 const FULL_SCAN_MAX_BYTES = 25 * 1024 * 1024;  // PNG/WebP may store EXIF at the end
 const META_CONCURRENCY    = 4;
 const VIEWS               = ["slideshow", "thumbnails", "feed"];
-const THUMB_HEIGHT        = 512;               // px; sharp in a 3x phone tile, even for portrait photos
-const THUMB_CACHE         = "Gallery_thumbs";  // Cache Storage name for the small copies
+const THUMB_HEIGHT        = 512;               // px, as in .github/scripts/gallery_thumbnails.py
 const THUMB_WORKER        = "Gallery_utils/Gallery_thumbs.js";
 
 /* ============================================================
@@ -68,11 +70,11 @@ let pendingHash  = null;  // hash state to apply once photos load
 let loadNotices  = [];    // problems with the captions file
 let clockTimer   = null;
 const loadedSrcs = new Set(); // photo URLs already downloaded on this visit
-const thumbUrls  = new Map(); // photo SHA (or path) → object URL of its small copy
+const thumbUrls  = new Map(); // photo SHA (or path) → object URL of a copy made here
+const missingThumbs = new Set(); // SHAs whose copy in Gallery_thumbs/ isn't published yet
 let thumbWorker  = null;      // null = not started yet, false = unavailable
 const thumbJobs  = new Map(); // worker job id → { resolve, reject }
 let thumbJobId   = 0;
-let thumbCache   = null;      // Promise of the Cache Storage cache (or null)
 let thumbObserver = null;     // starts tiles as they near the screen
 let thumbQueue   = [];        // grid images waiting for their small copy
 let thumbBusy    = false;
@@ -239,7 +241,7 @@ function locateTiff(v) {
       const size = v.getUint16(off + 2);
       if (marker === 0xE1 && off + 10 <= len &&
           v.getUint32(off + 4) === 0x45786966 && v.getUint16(off + 8) === 0) {
-        return off + 10;                                                // "Exif\0\0"
+        return off + 2 + size <= len ? off + 10 : -1;                   // "Exif\0\0", read in full
       }
       off += 2 + size;
     }
@@ -252,7 +254,7 @@ function locateTiff(v) {
     while (off + 8 <= len) {
       const size = v.getUint32(off);
       const type = v.getUint32(off + 4);
-      if (type === 0x65584966) return off + 8;                          // eXIf
+      if (type === 0x65584966) return off + 8 + size <= len ? off + 8 : -1;   // eXIf, read in full
       if (type === 0x49454E44) return null;                             // IEND
       off += 12 + size;
     }
@@ -261,18 +263,23 @@ function locateTiff(v) {
 
   // WebP
   if (v.getUint32(0) === 0x52494646 && v.getUint32(8) === 0x57454250) {
+    // Only the extended format (VP8X) can hold EXIF, and its flags say
+    // whether it does, so most files are answered without reading further.
+    if (len < 21) return -1;
+    if (v.getUint32(12) !== 0x56503858 || !(v.getUint8(20) & 0x08)) return null;
     let off = 12;
     while (off + 8 <= len) {
       const type = v.getUint32(off);
       const size = v.getUint32(off + 4, true);
       if (type === 0x45584946) {                                        // EXIF
+        if (off + 8 + size > len) return -1;                            // not read in full
         let start = off + 8;
         if (start + 6 <= len && v.getUint32(start) === 0x45786966 && v.getUint16(start + 4) === 0) start += 6;
         return start;
       }
       off += 8 + size + (size & 1);
     }
-    return off === len ? null : -1;                                   // every chunk read
+    return off >= v.getUint32(4, true) + 8 ? null : -1;               // every chunk read
   }
 
   return null;
@@ -336,12 +343,17 @@ function exifDateFromBuffer(buf) {
   }
 }
 
-/** Read up to maxBytes from the start of a file without downloading the rest. */
+/**
+ * Read up to maxBytes from the start of a file without downloading the rest.
+ * Photo bytes read for their dates are kept out of the browser's cache.
+ */
 async function fetchHead(url, maxBytes) {
   // Ask for just the first bytes from this site; other hosts would need a
   // CORS preflight for the Range header, so stream and stop early instead.
   const sameOrigin = new URL(url, location.href).origin === location.origin;
-  const res = await fetch(url, sameOrigin ? { headers: { Range: `bytes=0-${maxBytes - 1}` } } : {});
+  const res = await fetch(url, sameOrigin
+    ? { cache: "no-store", headers: { Range: `bytes=0-${maxBytes - 1}` } }
+    : { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   if (res.status === 206 || !res.body || !res.body.getReader) return res.arrayBuffer();
 
@@ -367,7 +379,7 @@ async function readExifDate(photo) {
   let found = exifDateFromBuffer(await fetchHead(url, EXIF_HEAD_BYTES));
   const size = photo.size;                            // null when served from a local folder
   if (found === undefined && (size === null || (size > EXIF_HEAD_BYTES && size <= FULL_SCAN_MAX_BYTES))) {
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     found = exifDateFromBuffer(await res.arrayBuffer());
   }
@@ -881,12 +893,12 @@ function renderThumbnails() {
   viewPhotos.forEach((photo, i) => {
     const month = monthLabel(photo);
     if (!groups.length || groups[groups.length - 1].month !== month) groups.push({ month, tiles: [] });
-    // Tiles start empty and get their small copy from watchThumbs, unless
-    // it was already made on this visit.
-    const ready = thumbUrls.get(thumbKey(photo));
+    // A tile with no copy yet starts empty and gets one from watchThumbs.
+    const src = thumbSrc(photo);
+    const premade = src && !src.startsWith("blob:") ? ` data-premade="${escHtml(photo.sha)}"` : "";
     groups[groups.length - 1].tiles.push(`
   <button class="thumb" data-act="open" data-index="${i}">
-    <img${ready ? ` src="${escHtml(ready)}"` : ""} data-path="${escHtml(photo.path)}" alt="${escHtml(altText(photo))}" loading="lazy" decoding="async">
+    <img${src ? ` src="${escHtml(src)}"` : ""}${premade} data-path="${escHtml(photo.path)}" alt="${escHtml(altText(photo))}" loading="lazy" decoding="async">
   </button>`);
   });
 
@@ -910,57 +922,40 @@ function focusCurrentThumb() {
    THUMBNAILS — small copies for the grid
    A grid of full-size photos is more than a phone can hold in memory
    (Safari reloads the page, then gives up with "A problem repeatedly
-   occurred"). So each tile gets a small JPEG instead, made by a worker one
-   photo at a time as tiles near the screen. Copies are kept for the visit
-   and in Cache Storage by git blob SHA, so a photo is only shrunk again
-   after it changes. Without a worker (a page opened from disk, or a very
-   old browser) the tiles show the photos themselves.
+   occurred"), so each tile shows a small JPEG instead:
+   - Made on upload: .github/workflows/gallery-thumbnails.yml saves
+     Gallery_thumbs/<git blob SHA>.jpg for every photo pushed to main.
+   - Made here: until that copy is published (or when the listing has no
+     SHAs, as on a local server), a worker shrinks the photo, one at a time
+     as tiles near the screen. These copies live in memory for this visit
+     only and are never written to the device.
+   Without a worker (a page opened from disk, or a very old browser) the
+   tiles show the photos themselves.
    ============================================================ */
 
 function thumbKey(photo) {
   return photo.sha || photo.path;
 }
 
-/** Cache Storage key for a photo's small copy; only photos with a SHA are stored. */
-function thumbCacheUrl(photo) {
-  if (!photo.sha) return null;
-  return new URL(`${photoUrl(photo.path)}?thumb=${photo.sha}&h=${THUMB_HEIGHT}`, location.href).href;
+/** The tile's image: a copy made here, the published copy, or "" for none yet. */
+function thumbSrc(photo) {
+  const made = thumbUrls.get(thumbKey(photo));
+  if (made) return made;
+  if (photo.sha && !missingThumbs.has(photo.sha)) return `${encodePath(CFG.thumbsDir)}/${photo.sha}.jpg`;
+  return "";
 }
 
-function openThumbCache() {
-  if (!thumbCache) {
-    thumbCache = (window.caches ? caches.open(THUMB_CACHE) : Promise.resolve(null)).catch(() => null);
+/** A tile's published copy failed to load (not built yet): make one here. */
+function onPremadeThumbError(img) {
+  missingThumbs.add(img.dataset.premade);
+  delete img.dataset.premade;
+  img.removeAttribute("src");
+  if (!canShrinkPhotos()) {
+    img.src = photoUrl(img.dataset.path);
+    return;
   }
-  return thumbCache;
-}
-
-async function readStoredThumb(photo) {
-  const key   = thumbCacheUrl(photo);
-  const cache = key && await openThumbCache();
-  if (!cache) return null;
-  try {
-    const res = await cache.match(key);
-    return res ? await res.blob() : null;
-  } catch { return null; }
-}
-
-async function storeThumb(photo, blob) {
-  const key   = thumbCacheUrl(photo);
-  const cache = key && await openThumbCache();
-  if (!cache) return;
-  try { await cache.put(key, new Response(blob, { headers: { "Content-Type": "image/jpeg" } })); } catch {}
-}
-
-/** Drop stored copies of photos that have since changed or been removed. */
-async function pruneStoredThumbs(photos) {
-  const cache = await openThumbCache();
-  if (!cache) return;
-  const keep = new Set(photos.map(thumbCacheUrl));
-  try {
-    for (const req of await cache.keys()) {
-      if (!keep.has(req.url)) await cache.delete(req);
-    }
-  } catch {}
+  thumbQueue.push(img);
+  pumpThumbs();
 }
 
 /** Pages opened from disk can't start workers, and very old browsers lack the APIs. */
@@ -1005,15 +1000,8 @@ function shrinkPhoto(photo) {
 
 async function thumbUrlFor(photo) {
   const key = thumbKey(photo);
-  if (thumbUrls.has(key)) return thumbUrls.get(key);
-  let blob = await readStoredThumb(photo);
-  if (!blob) {
-    blob = await shrinkPhoto(photo);
-    storeThumb(photo, blob);
-  }
-  const url = URL.createObjectURL(blob);
-  thumbUrls.set(key, url);
-  return url;
+  if (!thumbUrls.has(key)) thumbUrls.set(key, URL.createObjectURL(await shrinkPhoto(photo)));
+  return thumbUrls.get(key);
 }
 
 /** Give the grid's empty tiles their small copies as they come near the screen. */
@@ -1452,10 +1440,13 @@ function initInput() {
     if (e.target instanceof HTMLImageElement && e.target.dataset.path) loadedSrcs.add(e.target.src);
   }, true);
 
-  // Opened from disk: a listed photo missing from this copy is shown from GitHub.
   document.addEventListener("error", e => {
     const img = e.target;
-    if (!isFilePage() || !(img instanceof HTMLImageElement) || !img.dataset.path || img.dataset.remote) return;
+    if (!(img instanceof HTMLImageElement) || !img.dataset.path) return;
+    // A thumbnail not published yet (photos pushed moments ago): make one here.
+    if (img.dataset.premade) { onPremadeThumbError(img); return; }
+    // Opened from disk: a listed photo missing from this copy is shown from GitHub.
+    if (!isFilePage() || img.dataset.remote) return;
     img.dataset.remote = "1";
     img.src = remoteUrl(img.dataset.path);
   }, true);
@@ -1491,7 +1482,6 @@ async function loadGallery(force = false) {
     allPhotos = photos;
     sortPhotos();
     buildTagIndex();
-    if (listingInfo.source === "github") pruneStoredThumbs(allPhotos);
 
     if (pendingHash) {
       if (VIEWS.includes(pendingHash.view)) activeView = pendingHash.view;

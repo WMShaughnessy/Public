@@ -34,6 +34,25 @@ Gallery_images/
 - File or folder names starting with `.` or `_` are ignored (GitHub Pages
   does not publish them).
 
+## Thumbnails
+
+After each push to `main`, a GitHub Action makes a small copy of every new
+photo in `Gallery_thumbs/` and commits it. That takes a minute or two, and
+until then the page makes its own copies in the browser. Because the Action
+adds a commit to `main`, **pull before your next push** if you push from your
+computer (uploading on github.com isn't affected).
+
+## Privacy
+
+- Everything in this folder is public. Anyone can view or download the
+  full-size photos, from the site or from the repo on GitHub, and git history
+  keeps a photo even after it's deleted here.
+- Remove location and other details before pushing; the page only needs the
+  date taken. Thumbnails carry no location, camera or date details.
+- The page doesn't store photos on visitors' devices: it only remembers the
+  photo list and dates. Browsers still keep their usual cache of images
+  they've shown (a private window keeps nothing).
+
 ## gallery.json
 
 One file for the whole gallery. Each photo is listed by file name; photos

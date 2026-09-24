@@ -1,0 +1,60 @@
+# Makes the small copies the Gallery's Thumbnails view shows, so a phone
+# loads about 50 KB per tile instead of the full photo. Runs after photos are
+# pushed to main and commits the copies to Gallery_thumbs/. Until they're
+# published, Gallery.html makes its own copies in the browser.
+name: Gallery thumbnails
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Gallery_images/**"
+      - "Gallery_thumbs/**"
+      - ".github/scripts/gallery_thumbnails.py"
+      - ".github/workflows/gallery-thumbnails.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # commit the thumbnails
+  pages: write      # ask GitHub Pages to publish them
+
+concurrency:
+  group: gallery-thumbnails
+  cancel-in-progress: false
+
+jobs:
+  thumbnails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - run: pip install "pillow==12.*"
+
+      - run: python .github/scripts/gallery_thumbnails.py
+
+      - name: Commit thumbnails
+        id: commit
+        run: |
+          git add -A Gallery_thumbs
+          if git diff --cached --quiet; then
+            echo "Thumbnails are up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update gallery thumbnails"
+          git pull --rebase origin main
+          git push origin HEAD:main
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      # A push made with this workflow's token may not start a Pages build.
+      - name: Publish
+        if: steps.commit.outputs.pushed == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method POST "repos/${{ github.repository }}/pages/builds"

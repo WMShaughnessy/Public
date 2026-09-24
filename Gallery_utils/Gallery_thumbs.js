@@ -1,12 +1,13 @@
 /**
  * Gallery — Gallery_thumbs.js
  *
- * Web worker that makes the small copies shown in the Thumbnails grid.
- * Gallery_script.js sends one photo at a time, so only one full-size photo
- * is ever decoded at once. A phone can't hold a grid of full-size photos in
- * memory: Safari reloads the page, then gives up with "A problem repeatedly
- * occurred". Decoding here, off the main thread, keeps the page responsive
- * while a large photo is shrunk.
+ * Web worker that makes small copies for the Thumbnails grid when the copy
+ * made on upload (Gallery_thumbs/) isn't published yet, or when previewing
+ * on a local server. Gallery_script.js sends one photo at a time, so only
+ * one full-size photo is ever decoded at once. A phone can't hold a grid of
+ * full-size photos in memory: Safari reloads the page, then gives up with
+ * "A problem repeatedly occurred". Decoding here, off the main thread,
+ * keeps the page responsive while a large photo is shrunk.
  *
  * In:  { id, url, height }  — photo URL and the height of the copy in px
  * Out: { id, blob }         — a JPEG of that height
@@ -17,7 +18,7 @@ self.onmessage = async e => {
   const { id, url, height } = e.data;
   let bitmap = null;
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: "no-store" });   // don't leave the full photo in the browser's cache
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     // Decoded straight to the small size; the full-size pixels are freed
     // once this returns.
