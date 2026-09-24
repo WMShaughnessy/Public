@@ -1,16 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <clipPath id="tile"><rect width="64" height="64" rx="14"/></clipPath>
-  <clipPath id="disc"><circle cx="29" cy="29" r="23"/></clipPath>
   <g clip-path="url(#tile)">
     <rect width="64" height="64" fill="#F7D500"/>
-    <polygon points="64,0 64,64 0,64" fill="#D92121"/>
-    <circle cx="35" cy="35" r="23" fill="#1A1A1A"/>
-    <g clip-path="url(#disc)">
-      <rect width="64" height="64" fill="#1B4B9A"/>
-      <g transform="rotate(-23 29 29)" fill="#F4EFE4">
-        <path d="M18 29a11 26 0 1 0 22 0a11 26 0 1 0 -22 0ZM22 29a7 26 0 1 0 14 0a7 26 0 1 0 -14 0Z" fill-rule="evenodd"/>
-        <rect y="27" width="64" height="4"/>
-      </g>
-    </g>
+    <g transform="translate(4 4)" fill="#1A1A1A"><rect x="8" y="8" width="20" height="20"/><circle cx="44" cy="18" r="10"/><polygon points="8,54 18,34 28,54"/><path d="M34 54V44A10 10 0 0 1 54 44V54Z"/></g>
+    <rect x="8" y="8" width="20" height="20" fill="#D92121"/>
+    <circle cx="44" cy="18" r="10" fill="#1B4B9A"/>
+    <polygon points="8,54 18,34 28,54" fill="#F4EFE4"/>
+    <path d="M34 54V44A10 10 0 0 1 54 44V54Z" fill="#F4EFE4"/>
   </g>
 </svg>

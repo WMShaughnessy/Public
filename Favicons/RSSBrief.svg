@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <clipPath id="tile"><rect width="64" height="64" rx="14"/></clipPath>
   <g clip-path="url(#tile)">
-    <rect width="64" height="64" fill="#D92121"/>
-    <g transform="translate(6 6)" fill="#1A1A1A"><path d="M8 6A46 46 0 0 1 54 52H44A36 36 0 0 0 8 16Z"/><path d="M8 24A28 28 0 0 1 36 52H26A18 18 0 0 0 8 34Z"/><circle cx="15" cy="45" r="7"/></g>
-    <path d="M8 6A46 46 0 0 1 54 52H44A36 36 0 0 0 8 16Z" fill="#F4EFE4"/>
-    <path d="M8 24A28 28 0 0 1 36 52H26A18 18 0 0 0 8 34Z" fill="#F7D500"/>
-    <circle cx="15" cy="45" r="7" fill="#1B4B9A"/>
+    <rect width="64" height="64" fill="#F7D500"/>
+    <g transform="translate(6 6)" fill="#1A1A1A"><path d="M6 6H13A39 39 0 0 1 52 45V52H43V45A30 30 0 0 0 13 15H6Z"/><path d="M6 22H13A23 23 0 0 1 36 45V52H27V45A14 14 0 0 0 13 31H6Z"/><circle cx="13" cy="45" r="7"/></g>
+    <path d="M6 6H13A39 39 0 0 1 52 45V52H43V45A30 30 0 0 0 13 15H6Z" fill="#D92121"/>
+    <path d="M6 22H13A23 23 0 0 1 36 45V52H27V45A14 14 0 0 0 13 31H6Z" fill="#1B4B9A"/>
+    <circle cx="13" cy="45" r="7" fill="#F4EFE4"/>
   </g>
 </svg>
