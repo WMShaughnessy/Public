@@ -326,7 +326,8 @@ async function fetchHead(url, maxBytes) {
 async function readExifDate(photo) {
   const url = photoUrl(photo.path);
   let found = exifDateFromBuffer(await fetchHead(url, EXIF_HEAD_BYTES));
-  if (found === undefined && photo.size > EXIF_HEAD_BYTES && photo.size <= FULL_SCAN_MAX_BYTES) {
+  const size = photo.size;                            // null when served from a local folder
+  if (found === undefined && (size === null || (size > EXIF_HEAD_BYTES && size <= FULL_SCAN_MAX_BYTES))) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     found = exifDateFromBuffer(await res.arrayBuffer());
@@ -388,8 +389,8 @@ function parseCaptions(text) {
 
 async function loadCaptions(fileEntry, cache, keep) {
   if (!fileEntry) return { map: new Map(), error: null };
-  const key = "j:" + fileEntry.sha;
-  let text = typeof cache[key] === "string" ? cache[key] : null;
+  const key = fileEntry.sha ? "j:" + fileEntry.sha : null;
+  let text = key && typeof cache[key] === "string" ? cache[key] : null;
   if (text === null) {
     try {
       const res = await fetch(photoUrl(fileEntry.path), { cache: "no-store" });
@@ -397,7 +398,7 @@ async function loadCaptions(fileEntry, cache, keep) {
     } catch {}
   }
   if (text === null) return { map: new Map(), error: `Could not read ${CFG.captionsFile} — try Refresh in a minute` };
-  keep[key] = text;
+  if (key) keep[key] = text;
   return parseCaptions(text);
 }
 
@@ -409,19 +410,78 @@ function unmatchedCaptionKeys(map, photos) {
 }
 
 /* ============================================================
-   LISTING (GitHub API) + CACHING (localStorage)
+   LISTING + CACHING (localStorage)
+   On GitHub Pages the photo list comes from the GitHub API (the branch in
+   CFG). When previewing a copy of the repo on a local web server, the
+   server's own folder listing is used instead, so local photos show up
+   before they are pushed.
    ============================================================ */
+
+function isGithubPages() {
+  return /\.github\.io$/i.test(location.hostname);
+}
+
+function githubLocation() {
+  return `${CFG.imagesDir}/ on the ${CFG.branch} branch of ${CFG.owner}/${CFG.repo}`;
+}
+
+/** Walk a web server's auto-generated folder listing (e.g. python -m http.server). */
+async function fetchServerListing() {
+  const base    = new URL(encodePath(CFG.imagesDir) + "/", location.href);
+  const entries = new Map();
+  const visited = new Set();
+
+  const crawl = async (dirUrl, depth) => {
+    if (depth > 6 || visited.has(dirUrl.pathname)) return;
+    visited.add(dirUrl.pathname);
+    const res = await fetch(dirUrl, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!(res.headers.get("content-type") || "").includes("html")) throw new Error("no folder listing");
+    const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+    for (const a of doc.querySelectorAll("a[href]")) {
+      const href = a.getAttribute("href");
+      if (!href || /^[?#]/.test(href)) continue;
+      const url = new URL(href, dirUrl);
+      url.search = "";
+      url.hash = "";
+      // Only follow links that lead deeper into this folder.
+      if (url.origin !== base.origin || !url.pathname.startsWith(dirUrl.pathname) || url.pathname === dirUrl.pathname) continue;
+      if (url.pathname.endsWith("/")) {
+        await crawl(url, depth + 1);
+      } else {
+        const path = decodeURIComponent(url.pathname.slice(base.pathname.length));
+        entries.set(path, { path, sha: null, size: null });
+      }
+    }
+  };
+
+  await crawl(base, 0);
+  return [...entries.values()];
+}
 
 function treeCacheId() {
   return [CFG.owner, CFG.repo, CFG.branch, CFG.imagesDir].join("|").toLowerCase();
 }
 
 async function fetchListing(force) {
+  if (location.protocol === "file:") {
+    throw new Error("This page was opened as a file on your computer, so it can't read the photo folder. " +
+                    "Open it from the GitHub Pages site, or run a local web server in the repo folder.");
+  }
+  if (!isGithubPages()) {
+    try {
+      const entries = await fetchServerListing();
+      return { entries, savedAt: Date.now(), fromCache: false, source: "local" };
+    } catch {
+      // No folder listing on this host — fall through to the GitHub API.
+    }
+  }
+
   const cached = readJSON(TREE_CACHE_KEY);
   const usable = cached && cached.id === treeCacheId() && Array.isArray(cached.entries);
   const ttlMs  = CFG.cacheTTLMinutes * 60 * 1000;
   if (usable && !force && Date.now() - cached.savedAt < ttlMs) {
-    return { entries: cached.entries, savedAt: cached.savedAt, fromCache: true };
+    return { entries: cached.entries, savedAt: cached.savedAt, fromCache: true, source: "github" };
   }
 
   const url = `https://api.github.com/repos/${encodeURIComponent(CFG.owner)}/${encodeURIComponent(CFG.repo)}` +
@@ -445,10 +505,10 @@ async function fetchListing(force) {
     }
     const savedAt = Date.now();
     writeJSON(TREE_CACHE_KEY, { id: treeCacheId(), savedAt, entries });
-    return { entries, savedAt, fromCache: false };
+    return { entries, savedAt, fromCache: false, source: "github" };
   } catch (err) {
     if (usable) {
-      return { entries: cached.entries, savedAt: cached.savedAt, fromCache: true, stale: true, error: err.message };
+      return { entries: cached.entries, savedAt: cached.savedAt, fromCache: true, stale: true, error: err.message, source: "github" };
     }
     throw err;
   }
@@ -518,8 +578,8 @@ async function loadMetadata(photos, captionsEntry, onProgress) {
   const tasks = photos.map(photo => async () => {
     const info = captions.map.get(photo.path.toLowerCase()) || captions.map.get(photo.name.toLowerCase()) || null;
 
-    const exifKey = "x:" + photo.sha;
-    let exif = cache[exifKey];
+    const exifKey = photo.sha ? "x:" + photo.sha : null;
+    let exif = exifKey ? cache[exifKey] : undefined;
     if (exif === undefined && !(info && info.date)) {
       try {
         const found = await readExifDate(photo);
@@ -528,7 +588,7 @@ async function loadMetadata(photos, captionsEntry, onProgress) {
         exif = undefined;
       }
     }
-    if (exif !== undefined) keep[exifKey] = exif;
+    if (exifKey && exif !== undefined) keep[exifKey] = exif;
 
     const exifDate = exif && exif.d ? { iso: exif.d, hasTime: exif.t !== false } : null;
     const date = (info && info.date) || exifDate || dateFromFilename(photo.name);
@@ -687,7 +747,8 @@ function renderLastUpdated() {
   const el = document.getElementById("last-updated");
   if (!el) return;
   if (!listingInfo) { el.textContent = ""; return; }
-  el.textContent = (listingInfo.fromCache ? "Cached · " : "Live · ") + relativeTime(listingInfo.savedAt);
+  const label = listingInfo.source === "local" ? "Local folder" : listingInfo.fromCache ? "Cached" : "Live";
+  el.textContent = `${label} · ${relativeTime(listingInfo.savedAt)}`;
 }
 
 /* ============================================================
@@ -813,7 +874,10 @@ function noticeHtml() {
 
 function emptyHtml() {
   if (activeTag) return `<div class="empty-state">No photos tagged “${escHtml(tagIndex.get(activeTag)?.label || activeTag)}”</div>`;
-  return `<div class="empty-state">No photos yet · add images to ${escHtml(CFG.imagesDir)}/</div>`;
+  const where = listingInfo && listingInfo.source === "local"
+    ? `Looked in ${CFG.imagesDir}/ on this server.`
+    : `Looked in ${githubLocation()}. Photos appear here once they are pushed to that branch — use ↻ Refresh after pushing.`;
+  return `<div class="empty-state">No photos found<div class="empty-detail">${escHtml(where)}</div></div>`;
 }
 
 function showLoadingState(text) {

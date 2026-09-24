@@ -542,6 +542,15 @@ button { font-family: var(--font); }
   text-transform: uppercase;
   letter-spacing: 1px;
 }
+.empty-detail {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--light);
+  text-transform: none;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
 
 /* ---------- Footer ---------- */
 .footer-row {

@@ -4,6 +4,21 @@ Everything in this folder shows up on `Gallery.html` automatically — push the
 files and the page picks them up (the folder listing is cached for 15 minutes;
 use **↻ Refresh** on the page to check sooner).
 
+The live site reads this folder **on the `main` branch** — photos on another
+branch, or only on your computer, won't appear there until they're merged or
+pushed to `main`.
+
+To preview locally before pushing, run a web server in the repo folder and
+open `http://localhost:8000/Gallery.html` — the page then reads your local
+`Gallery_images/` instead:
+
+```
+python3 -m http.server 8000
+```
+
+(Double-clicking `Gallery.html` to open it as a file won't work; browsers
+block a file page from reading the folder.)
+
 ## Layout
 
 ```
