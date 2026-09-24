@@ -3,7 +3,7 @@
   <g clip-path="url(#tile)">
     <rect width="64" height="64" fill="#1B4B9A"/>
     <polygon points="64,0 64,64 0,64" fill="#D92121"/>
-    <circle cx="44" cy="20" r="13" fill="#F7D500"/>
+    <circle cx="45" cy="19" r="14" fill="#F7D500"/>
     <g transform="translate(5 5)" fill="#1A1A1A"><circle cx="18" cy="43" r="9"/><circle cx="31" cy="36" r="13"/><circle cx="44" cy="43" r="9"/><rect x="18" y="43" width="26" height="9"/></g>
     <g fill="#F4EFE4"><circle cx="18" cy="43" r="9"/><circle cx="31" cy="36" r="13"/><circle cx="44" cy="43" r="9"/><rect x="18" y="43" width="26" height="9"/></g>
   </g>
