@@ -2,8 +2,9 @@
   <clipPath id="tile"><rect width="64" height="64" rx="14"/></clipPath>
   <g clip-path="url(#tile)">
     <rect width="64" height="64" fill="#D92121"/>
-    <path d="M10 8A46 46 0 0 1 56 54H46A36 36 0 0 0 10 18Z" fill="#F4EFE4"/>
-    <path d="M10 26A28 28 0 0 1 38 54H28A18 18 0 0 0 10 36Z" fill="#F7D500"/>
-    <circle cx="17" cy="47" r="7" fill="#1A1A1A"/>
+    <g transform="translate(6 6)" fill="#1A1A1A"><path d="M8 6A46 46 0 0 1 54 52H44A36 36 0 0 0 8 16Z"/><path d="M8 24A28 28 0 0 1 36 52H26A18 18 0 0 0 8 34Z"/><circle cx="15" cy="45" r="7"/></g>
+    <path d="M8 6A46 46 0 0 1 54 52H44A36 36 0 0 0 8 16Z" fill="#F4EFE4"/>
+    <path d="M8 24A28 28 0 0 1 36 52H26A18 18 0 0 0 8 34Z" fill="#F7D500"/>
+    <circle cx="15" cy="45" r="7" fill="#1B4B9A"/>
   </g>
 </svg>
