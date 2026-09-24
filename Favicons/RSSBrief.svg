@@ -1,10 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <clipPath id="tile"><rect width="64" height="64" rx="14"/></clipPath>
   <g clip-path="url(#tile)">
-    <rect width="64" height="64" fill="#F7D500"/>
-    <g transform="translate(6 6)" fill="#1A1A1A"><path d="M6 6H13A39 39 0 0 1 52 45V52H43V45A30 30 0 0 0 13 15H6Z"/><path d="M6 22H13A23 23 0 0 1 36 45V52H27V45A14 14 0 0 0 13 31H6Z"/><circle cx="13" cy="45" r="7"/></g>
-    <path d="M6 6H13A39 39 0 0 1 52 45V52H43V45A30 30 0 0 0 13 15H6Z" fill="#D92121"/>
-    <path d="M6 22H13A23 23 0 0 1 36 45V52H27V45A14 14 0 0 0 13 31H6Z" fill="#1B4B9A"/>
-    <circle cx="13" cy="45" r="7" fill="#F4EFE4"/>
+    <rect width="64" height="64" fill="#1B4B9A"/>
+    <rect x="18" y="12" width="32" height="46" fill="#1A1A1A"/>
+    <rect x="12" y="6" width="32" height="46" fill="#F4EFE4"/>
+    <rect x="16" y="10" width="24" height="6" fill="#1A1A1A"/>
+    <rect x="16" y="20" width="12" height="12" fill="#F7D500"/>
+    <circle cx="19.5" cy="28.5" r="2" fill="#D92121"/>
+    <path d="M17.5 21.5H19.5A7 7 0 0 1 26.5 28.5V30.5H23.5V28.5A4 4 0 0 0 19.5 24.5H17.5Z" fill="#D92121"/>
+    <rect x="32" y="20" width="8" height="4" fill="#1A1A1A"/>
+    <rect x="32" y="28" width="8" height="4" fill="#1A1A1A"/>
+    <rect x="16" y="36" width="24" height="4" fill="#1A1A1A"/>
+    <rect x="16" y="44" width="16" height="4" fill="#1A1A1A"/>
   </g>
 </svg>
