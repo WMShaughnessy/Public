@@ -89,6 +89,8 @@ window.BRIEF_CONFIG = {
     { name: "WSJ - Politics",                    url: "https://feeds.content.dowjones.io/public/rss/socialpoliticsfeed",                                                                    category: "News" },
     { name: "WSJ - U.S.",                        url: "https://feeds.content.dowjones.io/public/rss/RSSUSnews",                                                                             category: "News" },
     { name: "WSJ - Economy",                     url: "https://feeds.content.dowjones.io/public/rss/socialeconomyfeed",                                                                     category: "News" },
+    { name: "Google News - Top Stories",         url: "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en",                                                                                                                   category: "News", headline_only: true },
+    { name: "Google News - World",               url: "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en",                                                                                     category: "News", headline_only: true },
 
     // ——— Tech ———
     { name: "TechCrunch",                        url: "https://techcrunch.com/feed/",                                                                                                       category: "Tech" },
@@ -103,6 +105,7 @@ window.BRIEF_CONFIG = {
     { name: "Digital Trends",                    url: "https://www.digitaltrends.com/feed/",                                                                                                category: "Tech" },
     { name: "Slashdot",                          url: "http://rss.slashdot.org/Slashdot/slashdot",                                                                                          category: "Tech" },
     { name: "TechSpot",                          url: "https://www.techspot.com/backend.xml",                                                                                               category: "Tech" },
+    { name: "Hacker News - Front Page",          url: "https://hnrss.org/frontpage?points=100",                                                                                                                                  category: "Tech", headline_only: true },
 
     // ——— Business ———
     { name: "The Economist",                     url: "https://www.economist.com/latest/rss.xml",                                                                                           category: "Business" },
@@ -143,6 +146,16 @@ window.BRIEF_CONFIG = {
     { name: "CourtListener - SCOTUS",            url: "https://www.courtlistener.com/feed/court/scotus/",                                                                                  category: "Legal" },
     { name: "ABA Journal - Top Stories",         url: "https://feeds.feedburner.com/abajournal/topstories",                                                                                category: "Legal" },
     { name: "ABA Journal - Daily News",          url: "https://feeds.feedburner.com/abajournal/dailynews",                                                                                 category: "Legal" },
+
+    // ——— Alerts ———
+    { name: "Azure Status",                      url: "https://rssfeed.azure.status.microsoft/en-us/status/feed/",                                                                                                               category: "Alerts" },
+    { name: "Microsoft 365 Admin Center",        url: "https://status.cloud.microsoft/api/feed/mac",                                                                                                                             category: "Alerts" },
+    { name: "Power Platform Admin Center",       url: "https://status.cloud.microsoft/api/feed/ppac",                                                                                                                            category: "Alerts" },
+    { name: "Microsoft 365 / Outlook Outages",   url: "https://news.google.com/rss/search?q=(%22Microsoft+365%22+OR+Outlook+OR+%22Office+365%22+OR+Teams)+(outage+OR+down)+when:1d&hl=en-US&gl=US&ceid=US:en",                   category: "Alerts", headline_only: true },
+    { name: "Outage Reports",                    url: "https://news.google.com/rss/search?q=(outage+OR+cyberattack)+when:1d&hl=en-US&gl=US&ceid=US:en",                                                                          category: "Alerts", headline_only: true },
+    { name: "USGS - Significant Earthquakes",    url: "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_day.atom",                                                                                          category: "Alerts" },
+    { name: "GDACS - Global Disasters (24h)",    url: "https://www.gdacs.org/xml/rss_24h.xml",                                                                                                                                   category: "Alerts" },
+    { name: "NWS - New York Weather Alerts",     url: "https://api.weather.gov/alerts/active.atom?area=NY",                                                                                                                      category: "Alerts" },
   ]
 };
 </script>
