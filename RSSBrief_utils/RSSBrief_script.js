@@ -435,7 +435,8 @@ function weightedCategoryFill(articles, total) {
   const BIZ_SLOTS    = 2;
   const GOVLEG_SLOTS = 2;
   const TECH_SLOTS   = 1;
-  const CYCLE        = NEWS_SLOTS + BIZ_SLOTS + GOVLEG_SLOTS + TECH_SLOTS;
+  const ALERT_SLOTS  = 1;   // falls through to other categories when no alerts are live
+  const CYCLE        = NEWS_SLOTS + BIZ_SLOTS + GOVLEG_SLOTS + TECH_SLOTS + ALERT_SLOTS;
   const FRESH_MS    = (CFG.freshHours    || 6)  * 60 * 60 * 1000;
   const EXTENDED_MS = (CFG.extendedHours || 14) * 60 * 60 * 1000;
 
@@ -465,7 +466,7 @@ function weightedCategoryFill(articles, total) {
     }
   }
 
-  const freshResult = _weightedSelect(fresh, total, NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_SLOTS, CYCLE);
+  const freshResult = _weightedSelect(fresh, total, NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_SLOTS, ALERT_SLOTS, CYCLE);
 
   const keyOf = a => a.title + "|" + a.source;
   for (const pool of [extended, rest]) {
@@ -473,7 +474,7 @@ function weightedCategoryFill(articles, total) {
     const used = new Set(freshResult.map(keyOf));
     const avail = pool.filter(a => !used.has(keyOf(a)));
     freshResult.push(..._weightedSelect(avail, total - freshResult.length,
-      NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_SLOTS, CYCLE));
+      NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_SLOTS, ALERT_SLOTS, CYCLE));
   }
 
   // Tier first, then recency. Sorting on date alone undoes the tiers: a
@@ -498,21 +499,24 @@ function weightedCategoryFill(articles, total) {
   return freshResult;
 }
 
-function _weightedSelect(pool, total, NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_SLOTS, CYCLE) {
+function _weightedSelect(pool, total, NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_SLOTS, ALERT_SLOTS, CYCLE) {
   const news   = pool.filter(a => a.category === "News");
   const biz    = pool.filter(a => a.category === "Business");
   const govleg = pool.filter(a => GOV_LEGAL_CATS.has(a.category));
   const tech   = pool.filter(a => a.category === "Tech");
+  const alerts = pool.filter(a => a.category === "Alerts");
   const other  = pool.filter(a =>
     a.category !== "News" && a.category !== "Business" &&
-    a.category !== "Tech" && !GOV_LEGAL_CATS.has(a.category)
+    a.category !== "Tech" && a.category !== "Alerts" &&
+    !GOV_LEGAL_CATS.has(a.category)
   );
 
   const selected = [];
-  let ni = 0, bi = 0, gi = 0, ti = 0, oi = 0;
+  let ni = 0, bi = 0, gi = 0, ti = 0, ai = 0, oi = 0;
   const NEWS_END   = NEWS_SLOTS;
   const BIZ_END    = NEWS_END + BIZ_SLOTS;
   const GOVLEG_END = BIZ_END + GOVLEG_SLOTS;
+  const TECH_END   = GOVLEG_END + TECH_SLOTS;
 
   while (selected.length < total) {
     const pos = selected.length % CYCLE;
@@ -524,20 +528,31 @@ function _weightedSelect(pool, total, NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_
       else if (gi < govleg.length)   { selected.push(govleg[gi++]); pushed = true; }
       else if (oi < other.length)    { selected.push(other[oi++]); pushed = true; }
       else if (ti < tech.length)     { selected.push(tech[ti++]); pushed = true; }
+      else if (ai < alerts.length)   { selected.push(alerts[ai++]); pushed = true; }
     } else if (pos < BIZ_END) {
       if (bi < biz.length)           { selected.push(biz[bi++]); pushed = true; }
       else if (gi < govleg.length)   { selected.push(govleg[gi++]); pushed = true; }
       else if (ni < news.length)     { selected.push(news[ni++]); pushed = true; }
       else if (oi < other.length)    { selected.push(other[oi++]); pushed = true; }
       else if (ti < tech.length)     { selected.push(tech[ti++]); pushed = true; }
+      else if (ai < alerts.length)   { selected.push(alerts[ai++]); pushed = true; }
     } else if (pos < GOVLEG_END) {
       if (gi < govleg.length)        { selected.push(govleg[gi++]); pushed = true; }
       else if (bi < biz.length)      { selected.push(biz[bi++]); pushed = true; }
       else if (ni < news.length)     { selected.push(news[ni++]); pushed = true; }
       else if (oi < other.length)    { selected.push(other[oi++]); pushed = true; }
       else if (ti < tech.length)     { selected.push(tech[ti++]); pushed = true; }
-    } else {
+      else if (ai < alerts.length)   { selected.push(alerts[ai++]); pushed = true; }
+    } else if (pos < TECH_END) {
       if (ti < tech.length)          { selected.push(tech[ti++]); pushed = true; }
+      else if (oi < other.length)    { selected.push(other[oi++]); pushed = true; }
+      else if (ai < alerts.length)   { selected.push(alerts[ai++]); pushed = true; }
+      else if (gi < govleg.length)   { selected.push(govleg[gi++]); pushed = true; }
+      else if (bi < biz.length)      { selected.push(biz[bi++]); pushed = true; }
+      else if (ni < news.length)     { selected.push(news[ni++]); pushed = true; }
+    } else {
+      if (ai < alerts.length)        { selected.push(alerts[ai++]); pushed = true; }
+      else if (ti < tech.length)     { selected.push(tech[ti++]); pushed = true; }
       else if (oi < other.length)    { selected.push(other[oi++]); pushed = true; }
       else if (gi < govleg.length)   { selected.push(govleg[gi++]); pushed = true; }
       else if (bi < biz.length)      { selected.push(biz[bi++]); pushed = true; }

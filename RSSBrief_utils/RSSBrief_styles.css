@@ -354,6 +354,7 @@ a:hover { text-decoration: underline; }
 .card-category.cat-government    { background: var(--yellow); color: var(--black); border-color: var(--black); }
 .card-category.cat-legal         { background: var(--yellow); color: var(--black); border-color: var(--black); }
 .card-category.cat-gov-\&-legal  { background: var(--yellow); color: var(--black); border-color: var(--black); }
+.card-category.cat-alerts        { background: var(--black);  color: var(--white); border-color: var(--black); }
 .card-category.cat-uncategorized { background: var(--grey);   color: var(--white); border-color: var(--black); }
 
 .card-title {
