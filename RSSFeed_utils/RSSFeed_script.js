@@ -1,5 +1,5 @@
 /**
- * RSS Brief — RSSBrief_script.js
+ * RSS Feed — RSSFeed_script.js
  *
  * Fetches RSS feeds client-side via rss2json API (CORS bridge),
  * with corsproxy.io fallback.
@@ -22,7 +22,7 @@
    ============================================================ */
 
 const DEFAULT_CONFIG = {
-  title: "RSS Brief",
+  title: "RSS Feed",
   totalArticles: 30,
   maxPerSource: 5,
   cacheTTLMinutes: 15,
@@ -34,8 +34,8 @@ const DEFAULT_CONFIG = {
 };
 
 const CFG = Object.assign({}, DEFAULT_CONFIG, window.BRIEF_CONFIG || {});
-const CACHE_PREFIX   = "RSSBrief_feed_";
-const CACHE_META_KEY = "RSSBrief_meta";
+const CACHE_PREFIX   = "RSSFeed_feed_";
+const CACHE_META_KEY = "RSSFeed_meta";
 
 // Categories that share the "Gov & Legal" combined filter button
 const GOV_LEGAL_CATS = new Set(["Government", "Legal"]);
@@ -332,7 +332,7 @@ function writeCache(sourceUrl, articles) {
       articles,
     }));
   } catch (e) {
-    console.warn("[RSSBrief] Cache write failed:", e.message);
+    console.warn("[RSSFeed] Cache write failed:", e.message);
   }
 }
 
@@ -681,13 +681,13 @@ async function fetchFeed(source) {
     writeCache(source.url, articles);
     return { articles, fromCache: false, error: null };
   } catch (e1) {
-    console.warn(`[RSSBrief] rss2json failed for "${source.name}": ${e1.message}`);
+    console.warn(`[RSSFeed] rss2json failed for "${source.name}": ${e1.message}`);
     try {
       const articles = applySourceTransforms(await fetchFeedViaCorsProxy(source), source);
       writeCache(source.url, articles);
       return { articles, fromCache: false, error: null };
     } catch (e2) {
-      console.error(`[RSSBrief] Both methods failed for "${source.name}": ${e2.message}`);
+      console.error(`[RSSFeed] Both methods failed for "${source.name}": ${e2.message}`);
       return { articles: [], fromCache: false, error: e2.message };
     }
   }
@@ -1142,7 +1142,7 @@ async function loadAllFeeds(force = false) {
 
   const sources = CFG.sources;
   if (!sources || sources.length === 0) {
-    showLoadError("No sources configured. Add feeds to window.BRIEF_CONFIG.sources in RSSBrief.html.");
+    showLoadError("No sources configured. Add feeds to window.BRIEF_CONFIG.sources in RSSFeed.html.");
     isLoading = false;
     if (refreshBtn) refreshBtn.disabled = false;
     return;
