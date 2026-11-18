@@ -6,10 +6,16 @@
  *
  * Features:
  *  - localStorage caching with configurable TTL (default 15 min)
- *  - Remembers which feeds can be read directly and skips proxies for them
+ *  - Remembers the route (direct, rss2json or a proxy) that last worked for
+ *    each feed and tries it first; feeds that allow it skip the proxies
+ *  - Skips rss2json or a proxy for the rest of a load once it fails 4 times
  *  - At most 8 feeds in flight, each with a 10 s timeout
+ *  - Shows saved articles at once, then replaces them as feeds refresh
  *  - A failed feed shows its last good copy (up to 24 h) marked stale
  *  - Refresh only refetches feeds older than 2 minutes
+ *  - Saved copies keep each feed's newest 20 items; if storage fills up,
+ *    old and unconfigured feeds are cleared first
+ *  - Duplicates caught by link as well as by headline
  *  - Collapsible source list grouped by category, clickable to filter
  *  - Source filter draws up to 15 most recent articles from raw feed cache
  *  - Feed failure indicators per source
@@ -180,6 +186,19 @@ function formatDate(isoStr) {
   } catch { return isoStr; }
 }
 
+/* Parsing a date string is slow next to comparing numbers, and the sorts below
+   compare the same articles thousands of times, so each article's timestamp
+   is parsed once. NaN when the date is missing or unreadable. */
+const pubTimes = new WeakMap();
+function pubTime(article) {
+  let t = pubTimes.get(article);
+  if (t === undefined) {
+    t = article.pubDate ? new Date(article.pubDate).getTime() : NaN;
+    pubTimes.set(article, t);
+  }
+  return t;
+}
+
 const COLORS = ["red", "yellow", "blue"];
 
 function colorForIndex(i) {
@@ -328,15 +347,45 @@ function readCache(sourceUrl) {
   } catch { return null; }
 }
 
-function writeCache(sourceUrl, articles) {
-  try {
-    localStorage.setItem(cacheKey(sourceUrl), JSON.stringify({
-      savedAt: Date.now(),
-      articles,
-    }));
-  } catch (e) {
-    console.warn("[RSSFeed] Cache write failed:", e.message);
+const CACHE_MAX_ITEMS = 20;   // newest items kept per feed; the page never shows more than 15
+
+/** Remove saved feeds that are no longer in the config, then the oldest, to free space. */
+function pruneCaches(keepKey) {
+  const wanted = new Set((CFG.sources || []).map(src => cacheKey(src.url)));
+  const entries = [];
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (!key || !key.startsWith(CACHE_PREFIX) || key === keepKey) continue;
+    if (!wanted.has(key)) { localStorage.removeItem(key); continue; }
+    let savedAt = 0;
+    try { savedAt = JSON.parse(localStorage.getItem(key)).savedAt || 0; } catch {}
+    entries.push({ key, savedAt });
   }
+  return entries.sort((a, b) => a.savedAt - b.savedAt);   // oldest first
+}
+
+function writeCache(sourceUrl, articles) {
+  const key = cacheKey(sourceUrl);
+  const newest = articles.slice()
+    .sort((a, b) => (pubTime(b) || 0) - (pubTime(a) || 0))
+    .slice(0, CACHE_MAX_ITEMS);
+  const value = JSON.stringify({ savedAt: Date.now(), articles: newest });
+  try {
+    localStorage.setItem(key, value);
+    return;
+  } catch {}
+  // Storage is full. Drop feeds no longer configured, then the oldest copies,
+  // until this one fits; the copy just fetched is worth more than an old one.
+  try {
+    const oldest = pruneCaches(key);
+    for (;;) {
+      try { localStorage.setItem(key, value); return; } catch {}
+      const victim = oldest.shift();
+      if (!victim) break;
+      localStorage.removeItem(victim.key);
+    }
+  } catch {}
+  console.warn("[RSSFeed] Cache write failed: storage full");
 }
 
 function writeMeta(info) {
@@ -364,9 +413,12 @@ function normalizeTitle(title) {
     .trim();
 }
 
-function titleSimilarity(a, b) {
-  const wordsA = new Set(normalizeTitle(a).split(" ").filter(w => w.length > 2));
-  const wordsB = new Set(normalizeTitle(b).split(" ").filter(w => w.length > 2));
+function titleWords(title) {
+  return new Set(normalizeTitle(title).split(" ").filter(w => w.length > 2));
+}
+
+/** Jaccard overlap of two word sets; two empty titles count as the same. */
+function wordSimilarity(wordsA, wordsB) {
   if (wordsA.size === 0 && wordsB.size === 0) return 1;
   if (wordsA.size === 0 || wordsB.size === 0) return 0;
   let intersection = 0;
@@ -374,19 +426,36 @@ function titleSimilarity(a, b) {
   return intersection / (wordsA.size + wordsB.size - intersection);
 }
 
-function deduplicateArticles(articles) {
-  const kept = [];
-  for (const candidate of articles) {
-    let isDup = false;
-    for (const existing of kept) {
-      if (titleSimilarity(candidate.title, existing.title) >= CFG.dedupThreshold) {
-        isDup = true;
-        break;
-      }
+/** A link reduced to what identifies the story: no tracking, fragment or trailing slash. */
+function linkKey(link) {
+  try {
+    const u = new URL(link);
+    if (!/^https?:$/.test(u.protocol)) return "";
+    u.hash = "";
+    for (const k of Array.from(u.searchParams.keys())) {
+      if (/^(utm_|fbclid$|gclid$|mc_|cmpid$|smid$|taid$)/i.test(k)) u.searchParams.delete(k);
     }
-    if (!isDup) kept.push(candidate);
+    return (u.host.replace(/^www\./, "") + u.pathname.replace(/\/+$/, "") + u.search).toLowerCase();
+  } catch { return ""; }
+}
+
+/**
+ * Drop repeats: the same link, or a title too close to one already kept.
+ * Word sets are built once per article rather than once per comparison --
+ * this runs after every feed arrives, over a few hundred articles.
+ */
+function deduplicateArticles(articles) {
+  const kept  = [];
+  const links = new Set();
+  for (const candidate of articles) {
+    const link = linkKey(candidate.link);
+    if (link && links.has(link)) continue;
+    const words = titleWords(candidate.title);
+    if (kept.some(k => wordSimilarity(words, k.words) >= CFG.dedupThreshold)) continue;
+    kept.push({ article: candidate, words });
+    if (link) links.add(link);
   }
-  return kept;
+  return kept.map(k => k.article);
 }
 
 const TECH_SPAM_PATTERNS = [
@@ -455,7 +524,7 @@ function weightedCategoryFill(articles, total) {
   const rest     = [];
   for (const a of articles) {
     if (a.category === "Tech" && isTechSpam(a)) continue;
-    const t = a.pubDate ? new Date(a.pubDate).getTime() : 0;
+    const t = pubTime(a) || 0;
     const age = now - t;
     if (!t || Number.isNaN(t) || age < 0) {
       // No usable timestamp, or one in the future: keep it, rank it last.
@@ -489,7 +558,7 @@ function weightedCategoryFill(articles, total) {
   extended.forEach(a => tierOf.set(a, 1));
   rest.forEach(a     => tierOf.set(a, 2));
   const timeOf = a => {
-    const t = a.pubDate ? new Date(a.pubDate).getTime() : NaN;
+    const t = pubTime(a);
     return Number.isFinite(t) ? t : -Infinity;   // undated sorts last
   };
   freshResult.sort((a, b) => {
@@ -569,7 +638,8 @@ function _weightedSelect(pool, total, NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_
 }
 
 /* ============================================================
-   FETCH  —  direct → rss2json → CORS proxies → last good copy
+   FETCH  —  each feed's known route first, then direct → rss2json →
+             CORS proxies, then its last good copy
    ============================================================ */
 
 const FETCH_TIMEOUT_MS   = 10000;                    // a hung request must not stall the load
@@ -577,7 +647,8 @@ const FETCH_CONCURRENCY  = 8;                        // feeds in flight at once
 const REFRESH_MIN_AGE_MS = 2 * 60 * 1000;            // Refresh keeps copies younger than this
 const STALE_LIMIT_MS     = 24 * 60 * 60 * 1000;      // oldest copy shown when a feed fails
 const DIRECT_RETRY_MS    = 7 * 24 * 60 * 60 * 1000;  // re-test a feed that refused direct access
-const DIRECT_KEY         = "RSSFeed_direct";
+const ROUTE_KEY          = "RSSFeed_routes";
+const BREAKER_LIMIT      = 4;                        // failures in a row before a service is skipped
 
 /** fetch() that gives up after FETCH_TIMEOUT_MS instead of waiting forever. */
 async function fetchWithTimeout(url) {
@@ -592,33 +663,89 @@ async function fetchWithTimeout(url) {
   }
 }
 
-/* Direct access.
-   Some publishers (NWS, USGS, Hacker News and others) let a browser read
-   their feed from another site; most do not. There is no way to ask first,
-   so each feed is tried directly once and the answer is remembered: feeds
-   that allow it skip the proxies from then on, and feeds that refuse are
-   not tried again for a week. A refusal is only recorded when a proxy then
-   succeeds, so being offline never marks a feed as blocked. */
+/* Routes.
+   A feed can be read four ways: directly from the publisher (only when the
+   publisher allows browsers to), through rss2json, or through one of two CORS
+   proxies. Each feed remembers the way that last worked and tries it first
+   next time, so a typical load makes one request per feed.
 
-let directMemo = null;
+   Direct access cannot be checked in advance, so a feed is tried directly
+   once; a refusal is recorded only when another route then succeeds (being
+   offline never marks a feed as blocked) and is re-tested after a week. */
 
-function directMemoLoad() {
-  if (directMemo) return directMemo;
-  try { directMemo = JSON.parse(localStorage.getItem(DIRECT_KEY)) || {}; }
-  catch { directMemo = {}; }
-  return directMemo;
+let routeMemo = null;
+
+function routesLoad() {
+  if (routeMemo) return routeMemo;
+  try { routeMemo = JSON.parse(localStorage.getItem(ROUTE_KEY)) || {}; }
+  catch { routeMemo = {}; }
+  return routeMemo;
 }
 
-function directMemoSet(url, ok) {
-  const memo = directMemoLoad();
-  memo[cacheKey(url)] = { ok, at: Date.now() };
-  try { localStorage.setItem(DIRECT_KEY, JSON.stringify(memo)); } catch {}
+function routeSave(url, via, directFailed) {
+  const memo  = routesLoad();
+  const key   = cacheKey(url);
+  const entry = memo[key] || {};
+  entry.via = via;
+  if (via === "direct") entry.directBlockedAt = 0;
+  else if (directFailed) entry.directBlockedAt = Date.now();
+  memo[key] = entry;
+  try { localStorage.setItem(ROUTE_KEY, JSON.stringify(memo)); } catch {}
 }
 
-function shouldTryDirect(url) {
-  const entry = directMemoLoad()[cacheKey(url)];
-  if (!entry || entry.ok) return true;
-  return Date.now() - entry.at > DIRECT_RETRY_MS;
+function routeOrder(url) {
+  const entry = routesLoad()[cacheKey(url)] || {};
+  const directOk = !entry.directBlockedAt || Date.now() - entry.directBlockedAt > DIRECT_RETRY_MS;
+  const order = ["direct", "rss2json", "corsproxy", "allorigins"]
+    .filter(how => how !== "direct" || directOk);
+  if (entry.via && order.includes(entry.via)) {
+    order.splice(order.indexOf(entry.via), 1);
+    order.unshift(entry.via);
+  }
+  return order;
+}
+
+/* Circuit breaker.
+   When rss2json is rate-limiting or a proxy is down, every feed would
+   otherwise wait for it to fail before moving on. After BREAKER_LIMIT
+   failures in a row a shared service is skipped for the rest of the load.
+   Direct access is per publisher, so it never trips. Reset on every load. */
+
+let serviceFailures = {};
+
+function serviceUsable(how) {
+  return how === "direct" || (serviceFailures[how] || 0) < BREAKER_LIMIT;
+}
+
+function serviceResult(how, ok) {
+  if (how === "direct") return;
+  serviceFailures[how] = ok ? 0 : (serviceFailures[how] || 0) + 1;
+}
+
+/** First child element with one of these tag names (qualified names work, e.g. "dc:date"). */
+function firstTag(item, ...names) {
+  for (const name of names) {
+    const el = item.getElementsByTagName(name)[0];
+    if (el && el.textContent.trim()) return el.textContent;
+  }
+  return "";
+}
+
+/**
+ * The story's address. RSS puts it in <link>text</link>; Atom uses
+ * <link href> and may list several (self, enclosure, replies), of which the
+ * story is rel="alternate" or the one with no rel. <guid> is used only when it
+ * is itself a web address.
+ */
+function itemLink(item) {
+  const links = Array.from(item.getElementsByTagName("link"));
+  const pick  = links.find(l => l.getAttribute("rel") === "alternate")
+             || links.find(l => !l.getAttribute("rel"))
+             || links[0];
+  const fromLink = pick ? (pick.getAttribute("href") || pick.textContent || "").trim() : "";
+  if (fromLink) return fromLink;
+  const guid = firstTag(item, "guid", "id").trim();
+  return /^https?:\/\//i.test(guid) ? guid : "";
 }
 
 /** Turn RSS or Atom XML into article objects. */
@@ -630,19 +757,12 @@ function parseFeedXml(text, source) {
   if (items.length === 0) throw new Error("No items found");
 
   return items.map(item => {
-    const get = sel => {
-      const el = item.querySelector(sel);
-      return el ? (el.textContent || "") : "";
-    };
-    const linkEl  = item.querySelector("link");
-    const link    = get("link") || linkEl?.getAttribute("href") || "";
-    const pubDate = get("pubDate") || get("published") || get("updated") || null;
-
+    const pubDate = firstTag(item, "pubDate", "published", "updated", "dc:date") || null;
     return {
-      title:       sanitizeTitle(get("title") || "Untitled", source.sanitize_headline),
-      link:        link.trim(),
+      title:       sanitizeTitle(firstTag(item, "title") || "Untitled", source.sanitize_headline),
+      link:        itemLink(item),
       pubDate:     pubDate ? normalizeDate(pubDate.trim()) : null,
-      description: get("description") || get("summary") || get("content") || "",
+      description: firstTag(item, "description", "summary", "content", "content:encoded"),
       source:      source.name,
       category:    source.category || "Uncategorized",
       sourceUrl:   source.url,
@@ -651,9 +771,7 @@ function parseFeedXml(text, source) {
   });
 }
 
-async function fetchFeedDirect(source) {
-  // An https page cannot fetch http, so ask for the https address instead.
-  const url = source.url.replace(/^http:\/\//i, "https://");
+async function fetchXml(url, source) {
   const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return parseFeedXml(await res.text(), source);
@@ -688,24 +806,13 @@ async function fetchFeedViaRss2Json(source) {
   }));
 }
 
-async function fetchFeedViaCorsProxy(source) {
-  const proxies = [
-    url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
-    url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  ];
-
-  let lastError;
-  for (const makeUrl of proxies) {
-    try {
-      const res = await fetchWithTimeout(makeUrl(source.url));
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return parseFeedXml(await res.text(), source);
-    } catch (e) {
-      lastError = e;
-    }
-  }
-  throw lastError || new Error("All CORS proxies failed");
-}
+const ROUTES = {
+  // An https page cannot fetch http, so ask the publisher over https.
+  direct:     src => fetchXml(src.url.replace(/^http:\/\//i, "https://"), src),
+  rss2json:   fetchFeedViaRss2Json,
+  corsproxy:  src => fetchXml(`https://corsproxy.io/?url=${encodeURIComponent(src.url)}`, src),
+  allorigins: src => fetchXml(`https://api.allorigins.win/raw?url=${encodeURIComponent(src.url)}`, src),
+};
 
 function applySourceTransforms(articles, source) {
   return articles.map(a => {
@@ -731,9 +838,9 @@ function applySourceTransforms(articles, source) {
 /**
  * Get one feed's articles.
  *
- * A saved copy younger than maxAgeMs is used as is. Otherwise the feed is
- * fetched directly, then through rss2json, then through the CORS proxies.
- * If all of those fail, a saved copy up to STALE_LIMIT_MS old is shown and
+ * A saved copy younger than maxAgeMs is used as is. Otherwise the feed's
+ * routes are tried in routeOrder(), skipping services the breaker has
+ * tripped. If all fail, a saved copy up to STALE_LIMIT_MS old is returned
  * flagged stale, so one bad minute at a proxy does not empty the page.
  */
 async function fetchFeed(source, maxAgeMs) {
@@ -745,25 +852,25 @@ async function fetchFeed(source, maxAgeMs) {
     return { articles: cached.articles, fromCache: true, stale: false, error: null };
   }
 
-  const tryDirect = shouldTryDirect(source.url);
-  const attempts  = [];
-  if (tryDirect) attempts.push(["direct", fetchFeedDirect]);
-  attempts.push(["rss2json", fetchFeedViaRss2Json], ["proxy", fetchFeedViaCorsProxy]);
-
   let lastError;
-  for (const [how, fetcher] of attempts) {
+  let directFailed = false;
+  for (const how of routeOrder(source.url)) {
+    if (!serviceUsable(how)) continue;
     try {
-      const articles = applySourceTransforms(await fetcher(source), source);
-      if (tryDirect) directMemoSet(source.url, how === "direct");
+      const articles = applySourceTransforms(await ROUTES[how](source), source);
+      serviceResult(how, true);
+      routeSave(source.url, how, directFailed);
       writeCache(source.url, articles);
       return { articles, fromCache: false, stale: false, error: null };
     } catch (e) {
+      serviceResult(how, false);
+      if (how === "direct") directFailed = true;
       lastError = e;
       console.warn(`[RSSFeed] ${how} failed for "${source.name}": ${e.message}`);
     }
   }
 
-  const message = lastError ? lastError.message : "Fetch failed";
+  const message = lastError ? lastError.message : "All services unavailable";
   if (cached && age <= STALE_LIMIT_MS) {
     return { articles: cached.articles, fromCache: true, stale: true, savedAt: cached.savedAt, error: message };
   }
@@ -1096,11 +1203,7 @@ function applyFilters() {
   if (activeSource) {
     const raw = (rawBySource[activeSource] || [])
       .slice()
-      .sort((a, b) => {
-        const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
-        const db = b.pubDate ? new Date(b.pubDate).getTime() : 0;
-        return db - da;
-      })
+      .sort((a, b) => (pubTime(b) || 0) - (pubTime(a) || 0))
       .slice(0, 15);
     filtered = raw;
   } else if (activeCategory === "Gov & Legal") {
@@ -1201,11 +1304,7 @@ function rebuildArticlesFromRaw() {
   // Flatten all raw articles
   const rawArticles = Object.values(rawBySource)
     .flat()
-    .sort((a, b) => {
-      const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
-      const db = b.pubDate ? new Date(b.pubDate).getTime() : 0;
-      return db - da;
-    });
+    .sort((a, b) => (pubTime(b) || 0) - (pubTime(a) || 0));
 
   // Per-source cap
   const NEWS_PER_SOURCE = 10;
@@ -1251,11 +1350,69 @@ async function loadAllFeeds(force = false) {
   }
 
   let done = 0;
-  feedStatuses = [];
-  rawBySource  = {};
+  feedStatuses    = [];
+  rawBySource     = {};
+  serviceFailures = {};
 
-  // Track whether we've rendered articles yet (for the "All" tab progressive display)
-  let hasRenderedArticles = false;
+  // Draw the page from what is on screen so far. Feeds that come from cache
+  // finish within the same instant, so redraws are batched to at most one
+  // every 120 ms instead of one per feed (rebuilding dedups a few hundred
+  // articles and redraws 30 cards each time).
+  let renderTimer = null;
+  const renderProgress = () => {
+    renderTimer = null;
+    if (!isLoading) return;
+    // Progressive render: rebuild and display on the "All" tab
+    if (activeCategory === null && activeSource === null) {
+      rebuildArticlesFromRaw();
+
+      if (allArticles.length > 0) {
+        const wrapper = document.getElementById("articles-wrapper");
+        if (wrapper) {
+          // Render articles, then put the progress bar on top
+          wrapper.innerHTML = allArticles.map((a, i) => buildArticleCard(a, i)).join("\n");
+          renderStatsBar(allArticles.length);
+
+          // Re-insert progress bar at top while still loading
+          if (done < sources.length) {
+            const progressHtml = `
+<div class="status-row" id="loading-status-row">
+  <div class="spinner"></div>
+  <span id="loading-text">Loading ${done} / ${sources.length} feeds…</span>
+  <div class="progress-bar-wrap">
+    <div class="progress-bar" id="progress-bar" style="width:${Math.round((done / sources.length) * 100)}%"></div>
+  </div>
+</div>`;
+            wrapper.insertAdjacentHTML("afterbegin", progressHtml);
+          }
+        }
+      } else {
+        // No articles yet — just update progress
+        updateProgress(done, sources.length);
+      }
+    } else {
+      // A filter is active — just update progress bar
+      updateProgress(done, sources.length);
+    }
+
+    // Update category filter buttons progressively
+    if (allArticles.length > 0) {
+      renderCategoryFilters(allArticles);
+    }
+  };
+  const scheduleRender = () => {
+    if (!renderTimer) renderTimer = setTimeout(renderProgress, 120);
+  };
+
+  // Start from the saved copies (up to a day old) so the page has articles at
+  // once; each feed's entry is replaced as its fresh copy arrives.
+  for (const source of sources) {
+    const cached = readCache(source.url);
+    if (cached && Date.now() - cached.savedAt <= STALE_LIMIT_MS) {
+      rawBySource[source.name] = cached.articles;
+    }
+  }
+  if (Object.keys(rawBySource).length > 0) renderProgress();
 
   await runPool(sources, FETCH_CONCURRENCY, source =>
       fetchFeed(source, maxAgeMs).then(result => {
@@ -1263,6 +1420,7 @@ async function loadAllFeeds(force = false) {
 
         rawBySource[source.name] = result.articles;
 
+        const now = Date.now();
         feedStatuses.push({
           name:      source.name,
           category:  source.category || "Uncategorized",
@@ -1273,55 +1431,17 @@ async function loadAllFeeds(force = false) {
           stale:     result.stale,
           savedAt:   result.savedAt || null,
           latestPubDate: result.articles.reduce((latest, a) => {
-            if (!a.pubDate) return latest;
-            const t = new Date(a.pubDate).getTime();
-            if (t > Date.now()) return latest;
+            const t = pubTime(a);
+            if (!Number.isFinite(t) || t > now) return latest;
             return (t > latest) ? t : latest;
           }, 0) || null,
         });
 
-        // Progressive render: rebuild and display on the "All" tab
-        if (activeCategory === null && activeSource === null) {
-          rebuildArticlesFromRaw();
-
-          if (allArticles.length > 0) {
-            const wrapper = document.getElementById("articles-wrapper");
-            if (wrapper) {
-              // Render articles, then put the progress bar on top
-              wrapper.innerHTML = allArticles.map((a, i) => buildArticleCard(a, i)).join("\n");
-              renderStatsBar(allArticles.length);
-              hasRenderedArticles = true;
-
-              // Re-insert progress bar at top while still loading
-              if (done < sources.length) {
-                const progressHtml = `
-<div class="status-row" id="loading-status-row">
-  <div class="spinner"></div>
-  <span id="loading-text">Loading ${done} / ${sources.length} feeds…</span>
-  <div class="progress-bar-wrap">
-    <div class="progress-bar" id="progress-bar" style="width:${Math.round((done / sources.length) * 100)}%"></div>
-  </div>
-</div>`;
-                wrapper.insertAdjacentHTML("afterbegin", progressHtml);
-              }
-            }
-          } else {
-            // No articles yet — just update progress
-            updateProgress(done, sources.length);
-          }
-        } else {
-          // A filter is active — just update progress bar
-          updateProgress(done, sources.length);
-        }
-
-        // Update category filter buttons progressively
-        if (allArticles.length > 0) {
-          renderCategoryFilters(allArticles);
-        }
-
+        scheduleRender();
         return result.articles;
       })
   );
+  clearTimeout(renderTimer);
 
   // Final rebuild to ensure consistent state
   rebuildArticlesFromRaw();
