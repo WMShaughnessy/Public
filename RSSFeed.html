@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RSS Feed</title>
+  <link rel="icon" href="Favicons/RSSFeed-32.png" sizes="32x32">
+  <link rel="icon" href="Favicons/RSSFeed.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="Favicons/RSSFeed-180.png">
+  <link rel="stylesheet" href="RSSFeed_utils/RSSFeed_styles.css">
+</head>
+<body>
+
+<div class="page-wrap">
+  <div class="main-container">
+
+    <!-- ============ HEADER ============ -->
+    <div class="header-row">
+      <div class="header-accent-left"></div>
+      <div class="header-body">
+        <div class="header-title" id="header-title"><a href="index.html" style="color:inherit;text-decoration:none;">RSS Feed</a></div>
+        <div class="header-date"  id="header-date"></div>
+        <div class="header-time"  id="header-time"></div>
+      </div>
+      <div class="header-accent-right"></div>
+    </div>
+
+    <!-- ============ STATS BAR ============ -->
+    <div class="stats-bar">
+      <div class="stats-count">
+        <span id="stats-count-label">— ARTICLES</span>
+      </div>
+      <div class="stats-label">
+        <div class="controls">
+          <span id="filter-buttons"></span>
+        </div>
+        <div class="controls controls-secondary">
+          <button class="refresh-btn" id="refresh-btn">↻ Refresh</button>
+          <button class="sources-toggle-btn" id="sources-toggle">Sources ▾</button>
+        </div>
+      </div>
+      <div class="stats-accent"></div>
+    </div>
+
+    <!-- ============ SOURCES PANEL ============ -->
+    <div class="sources-detail" id="sources-detail"></div>
+
+    <!-- ============ ARTICLES ============ -->
+    <div id="articles-wrapper"></div>
+
+    <!-- ============ FOOTER ============ -->
+    <div class="footer-row">
+      <div class="footer-yellow"></div>
+      <div class="footer-body">
+        <span class="footer-text"><a href="#" style="color:inherit;text-decoration:none;">RSS Feed</a> · Personal Use Only</span>
+      </div>
+      <div class="footer-red"></div>
+      <div class="footer-blue"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================================================
+     CONFIGURATION
+     ============================================================ -->
+<script>
+window.BRIEF_CONFIG = {
+  title: "RSS Feed",
+  totalArticles: 30,
+  maxPerSource: 5,
+  cacheTTLMinutes: 15,
+  dedupThreshold: 0.55,
+  freshHours: 6,
+  extendedHours: 14,
+  rss2jsonApiKey: null,
+
+  sources: [
+    // ——— News ———
+    { name: "BBC News - World",                  url: "http://feeds.bbci.co.uk/news/world/rss.xml",                                                                                         category: "News" },
+    { name: "The New York Times",                url: "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",                                                                          category: "News" },
+    { name: "Reuters",                           url: "https://news.google.com/rss/search?q=site:reuters.com&hl=en-US&gl=US&ceid=US:en",       category: "News", headline_only: true, sanitize_headline: " - Reuters" },
+    { name: "The Guardian US",                   url: "https://www.theguardian.com/us-news/rss",                                                                                            category: "News" },
+    { name: "NPR",                               url: "https://feeds.npr.org/1001/rss.xml",                                                                                                 category: "News" },
+    { name: "Vox",                               url: "https://www.vox.com/rss/index.xml",                                                                                                  category: "News" },
+    { name: "Washington Post",                   url: "https://feeds.washingtonpost.com/rss/world",                                                                                         category: "News" },
+    { name: "Slate",                             url: "https://slate.com/feeds/all.rss",                                                                                                    category: "News" },
+    { name: "WSJ - World",                       url: "https://feeds.content.dowjones.io/public/rss/RSSWorldNews",                                                                          category: "News" },
+    { name: "WSJ - Politics",                    url: "https://feeds.content.dowjones.io/public/rss/socialpoliticsfeed",                                                                    category: "News" },
+    { name: "WSJ - U.S.",                        url: "https://feeds.content.dowjones.io/public/rss/RSSUSnews",                                                                             category: "News" },
+    { name: "WSJ - Economy",                     url: "https://feeds.content.dowjones.io/public/rss/socialeconomyfeed",                                                                     category: "News" },
+    { name: "Google News - Top Stories",         url: "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en",                                                                                                                   category: "News", headline_only: true },
+    { name: "Google News - World",               url: "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en",                                                                                     category: "News", headline_only: true },
+
+    // ——— Tech ———
+    { name: "TechCrunch",                        url: "https://techcrunch.com/feed/",                                                                                                       category: "Tech" },
+    { name: "The Verge",                         url: "https://www.theverge.com/rss/index.xml",                                                                                            category: "Tech" },
+    { name: "Ars Technica",                      url: "http://feeds.arstechnica.com/arstechnica/index",                                                                                    category: "Tech" },
+    { name: "9to5Mac",                           url: "https://9to5mac.com/feed/",                                                                                                          category: "Tech" },
+    { name: "CNET",                              url: "https://www.cnet.com/rss/news/",                                                                                                     category: "Tech" },
+    { name: "Macworld",                          url: "https://www.macworld.com/feed/",                                                                                                     category: "Tech" },
+    { name: "Wired",                             url: "https://www.wired.com/feed/rss",                                                                                                     category: "Tech" },
+    { name: "Engadget",                          url: "https://www.engadget.com/rss.xml",                                                                                                   category: "Tech" },
+    { name: "ZDNet",                             url: "https://www.zdnet.com/news/rss.xml",                                                                                                 category: "Tech" },
+    { name: "Digital Trends",                    url: "https://www.digitaltrends.com/feed/",                                                                                                category: "Tech" },
+    { name: "Slashdot",                          url: "http://rss.slashdot.org/Slashdot/slashdot",                                                                                          category: "Tech" },
+    { name: "TechSpot",                          url: "https://www.techspot.com/backend.xml",                                                                                               category: "Tech" },
+    { name: "Hacker News - Front Page",          url: "https://hnrss.org/frontpage?points=100",                                                                                                                                  category: "Tech", headline_only: true },
+
+    // ——— Business ———
+    { name: "The Economist",                     url: "https://www.economist.com/latest/rss.xml",                                                                                           category: "Business" },
+    { name: "MarketWatch",                       url: "http://feeds.marketwatch.com/marketwatch/topstories/",                                                                               category: "Business" },
+    { name: "Harvard Business Review",           url: "http://feeds.harvardbusiness.org/harvardbusiness/",                                                                                  category: "Business" },
+    { name: "Economist - World This Week",       url: "https://www.economist.com/the-world-this-week/rss.xml",                                                                             category: "Business" },
+    { name: "Business Insider",                  url: "https://feeds2.feedburner.com/businessinsider",                                                                                     category: "Business" },
+    { name: "WSJ - Business",                    url: "https://feeds.content.dowjones.io/public/rss/WSJcomUSBusiness",                                                                     category: "Business" },
+    { name: "Architectural Digest",              url: "https://www.architecturaldigest.com/feed",                                                                                           category: "Business" },
+    { name: "ArchDaily",                         url: "https://www.archdaily.com/rss.xml",                                                                                                  category: "Business" },
+    { name: "Dezeen",                            url: "https://www.dezeen.com/feed/",                                                                                                       category: "Business" },
+    { name: "The B1M",                           url: "https://news.google.com/rss/search?q=site:theb1m.com&hl=en-US&gl=US&ceid=US:en",                                                      category: "Business" },
+    { name: "YIMBY NY",                          url: "https://newyorkyimby.com/feed",                                                                                                      category: "Business" },
+    { name: "6sqft NYC",                         url: "https://www.6sqft.com/feed/",                                                                                                        category: "Business" },
+    { name: "The City NYC",                      url: "https://www.thecity.nyc/rss/index.xml",                                                                                              category: "Business" },
+    { name: "Gothamist",                         url: "https://gothamist.com/feed/",                                                                                                        category: "Business" },
+    { name: "Streetsblog NYC",                   url: "https://nyc.streetsblog.org/feed/",                                                                                                  category: "Business" },
+
+    // ——— Government ———
+    { name: "Federal Register",                  url: "https://www.federalregister.gov/reader-aids/rss",                                                                                    category: "Government" },
+    { name: "Federal Register - Exec. Orders",   url: "https://www.federalregister.gov/api/v1/documents.rss?conditions[type][]=PRESDOCU&conditions[presidential_document_type][]=executive_order", category: "Government" },
+    { name: "White House - Presidential Actions",url: "https://www.whitehouse.gov/presidential-actions/feed/",                                                                              category: "Government" },
+    { name: "State Dept - Int'l Organizations",  url: "https://www.state.gov/rss-feed/international-organizations/feed/",                                                                  category: "Government" },
+    { name: "State Dept - Press Releases",       url: "https://www.state.gov/rss-feed/press-releases/feed/",                                                                               category: "Government" },
+    { name: "State Dept - Press Briefings",      url: "https://www.state.gov/rss-feed/department-press-briefings/feed/",                                                                   category: "Government" },
+    { name: "NASA",                              url: "https://www.nasa.gov/news-release/feed/",                                                                                            category: "Government" },
+    { name: "SEC",                               url: "https://www.sec.gov/news/pressreleases.rss",                                                                                         category: "Government" },
+    { name: "FBI",                               url: "https://www.fbi.gov/feeds/fbi-in-the-news/rss.xml",                                                                                 category: "Government" },
+    { name: "CISA",                              url: "https://www.cisa.gov/cybersecurity-advisories/all.xml",                                                                              category: "Government" },
+    { name: "CENTCOM - Press Releases",          url: "https://www.centcom.mil/DesktopModules/ArticleCS/RSS.ashx?ContentType=2&Site=808&isdashboardselected=0&max=20",                       category: "Government" },
+    { name: "CENTCOM - News",                    url: "https://www.centcom.mil/DesktopModules/ArticleCS/RSS.ashx?ContentType=1&Site=808&isdashboardselected=0&max=20",                       category: "Government" },
+    { name: "DoD - News Feed",                   url: "https://www.war.gov/DesktopModules/ArticleCS/RSS.ashx?max=10&ContentType=1&Site=945",                                                category: "Government" },
+    { name: "DoD - News Releases",               url: "https://www.war.gov/DesktopModules/ArticleCS/RSS.ashx?ContentType=9&Site=945&max=10",                                                category: "Government" },
+
+    // ——— Legal ———
+    { name: "U.S. Courts",                       url: "https://www.uscourts.gov/news/rss",                                                                                                  category: "Legal" },
+    { name: "SCOTUSblog",                        url: "https://www.scotusblog.com/feed/",                                                                                                   category: "Legal" },
+    { name: "CourtListener - SCOTUS",            url: "https://www.courtlistener.com/feed/court/scotus/",                                                                                  category: "Legal" },
+    { name: "ABA Journal - Top Stories",         url: "https://feeds.feedburner.com/abajournal/topstories",                                                                                category: "Legal" },
+    { name: "ABA Journal - Daily News",          url: "https://feeds.feedburner.com/abajournal/dailynews",                                                                                 category: "Legal" },
+
+    // ——— Alerts ———
+    { name: "Azure Status",                      url: "https://rssfeed.azure.status.microsoft/en-us/status/feed/",                                                                                                               category: "Alerts" },
+    { name: "Microsoft 365 Admin Center",        url: "https://status.cloud.microsoft/api/feed/mac",                                                                                                                             category: "Alerts" },
+    { name: "Power Platform Admin Center",       url: "https://status.cloud.microsoft/api/feed/ppac",                                                                                                                            category: "Alerts" },
+    { name: "Microsoft 365 / Outlook Outages",   url: "https://news.google.com/rss/search?q=(%22Microsoft+365%22+OR+Outlook+OR+%22Office+365%22+OR+Teams)+(outage+OR+down)+when:1d&hl=en-US&gl=US&ceid=US:en",                   category: "Alerts", headline_only: true },
+    { name: "Outage Reports",                    url: "https://news.google.com/rss/search?q=(outage+OR+cyberattack)+when:1d&hl=en-US&gl=US&ceid=US:en",                                                                          category: "Alerts", headline_only: true },
+    { name: "USGS - Significant Earthquakes",    url: "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_day.atom",                                                                                          category: "Alerts" },
+    { name: "GDACS - Global Disasters (24h)",    url: "https://www.gdacs.org/xml/rss_24h.xml",                                                                                                                                   category: "Alerts" },
+    { name: "NWS - New York Weather Alerts",     url: "https://api.weather.gov/alerts/active.atom?area=NY",                                                                                                                      category: "Alerts" },
+  ]
+};
+</script>
+<script src="RSSFeed_utils/RSSFeed_script.js"></script>
+</body>
+</html>

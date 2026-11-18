@@ -2,7 +2,7 @@
 
 This guide records the strict formatting rules of the site, taken directly
 from the existing pages (`index.html`, `About.html`, `BusinessCard.html`,
-`RSSBrief.html`, `WeatherBrief.html`, `Gallery.html`) and their stylesheets.
+`RSSFeed.html`, `WeatherBrief.html`, `Gallery.html`) and their stylesheets.
 Every new page and every change to an existing page must follow it. When the
 code and this guide disagree, fix whichever one is wrong in the same change.
 
@@ -223,7 +223,7 @@ Each full page is built from the same four blocks, in this order, inside
 
 - Left accent is wide (140px) and colored; right accent is narrow (60px) and
   **always yellow**.
-- Left accent color: red on Home, RSS Brief and Gallery; blue on Weather
+- Left accent color: red on Home, RSS Feed and Gallery; blue on Weather
   Brief and Business Card.
 - The title always links back to `index.html`.
 - The clock redraws at the top of each minute and on `visibilitychange`.
@@ -236,7 +236,7 @@ Two forms:
   buttons, black accent (40px).
 - **App pages (RSS, Weather, Gallery):** stacked at all sizes. A colored
   `.stats-count` bar (white, bold, 14px) above a white `.stats-label` panel
-  holding `.controls` rows. The count bar is blue on RSS Brief and Gallery,
+  holding `.controls` rows. The count bar is blue on RSS Feed and Gallery,
   red on Weather Brief, so it never matches the header's left accent.
   `.stats-accent` is kept in the markup but hidden.
 
@@ -365,7 +365,7 @@ are square (`28px`) outline buttons.
 
 - Every page starts with `<!DOCTYPE html>`, `<html lang="en">`, `UTF-8`
   charset and the `width=device-width, initial-scale=1.0` viewport meta.
-- `<title>` is the plain page name ("RSS Brief", "Weather Brief"). It
+- `<title>` is the plain page name ("RSS Feed", "Weather Brief"). It
   matches the header title and the footer text.
 - Each page links three favicons, in this order:
 
@@ -438,7 +438,7 @@ are square (`28px`) outline buttons.
 Favicons follow one Bauhaus icon family:
 
 - 64×64 SVG on a tile with 14px rounded corners (`rx="14"`).
-- Tile background is one primary: blue (Home, RSS Brief, Weather Brief),
+- Tile background is one primary: blue (Home, RSS Feed, Weather Brief),
   red (About, Business Card) or yellow (Gallery).
 - Built from flat rectangles and arcs in the five palette colors plus a
   paper cream `#F4EFE4` for card shapes.
@@ -456,7 +456,7 @@ them into line when the file is next touched:
   4px `.card-divider` bars, instead of separate bordered rows, and its
   footer carries a sentence (`.footer-msg`, 13px, not uppercase) instead of
   the standard footer text.
-- Weather Brief's cards use `padding: 20px 24px`; RSS Brief and Gallery use
+- Weather Brief's cards use `padding: 20px 24px`; RSS Feed and Gallery use
   `18px 24px 20px`.
 
 ## Checklist for a new page
