@@ -1,11 +1,15 @@
 /**
  * RSS Feed — RSSFeed_script.js
  *
- * Fetches RSS feeds client-side via rss2json API (CORS bridge),
- * with corsproxy.io fallback.
+ * Fetches RSS feeds in the browser: directly where the publisher allows it,
+ * otherwise through rss2json, then corsproxy.io / allorigins.
  *
  * Features:
  *  - localStorage caching with configurable TTL (default 15 min)
+ *  - Remembers which feeds can be read directly and skips proxies for them
+ *  - At most 8 feeds in flight, each with a 10 s timeout
+ *  - A failed feed shows its last good copy (up to 24 h) marked stale
+ *  - Refresh only refetches feeds older than 2 minutes
  *  - Collapsible source list grouped by category, clickable to filter
  *  - Source filter draws up to 15 most recent articles from raw feed cache
  *  - Feed failure indicators per source
@@ -314,14 +318,13 @@ function cacheKey(sourceUrl) {
   return CACHE_PREFIX + Math.abs(hash).toString(36);
 }
 
+/** The saved copy of a feed, whatever its age, or null. Callers check savedAt. */
 function readCache(sourceUrl) {
   try {
     const raw = localStorage.getItem(cacheKey(sourceUrl));
     if (!raw) return null;
     const entry = JSON.parse(raw);
-    const ageMs = Date.now() - entry.savedAt;
-    if (ageMs > CFG.cacheTTLMinutes * 60 * 1000) return null;
-    return entry;
+    return entry && Array.isArray(entry.articles) ? entry : null;
   } catch { return null; }
 }
 
@@ -566,8 +569,95 @@ function _weightedSelect(pool, total, NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_
 }
 
 /* ============================================================
-   FETCH  —  rss2json → corsproxy fallback
+   FETCH  —  direct → rss2json → CORS proxies → last good copy
    ============================================================ */
+
+const FETCH_TIMEOUT_MS   = 10000;                    // a hung request must not stall the load
+const FETCH_CONCURRENCY  = 8;                        // feeds in flight at once
+const REFRESH_MIN_AGE_MS = 2 * 60 * 1000;            // Refresh keeps copies younger than this
+const STALE_LIMIT_MS     = 24 * 60 * 60 * 1000;      // oldest copy shown when a feed fails
+const DIRECT_RETRY_MS    = 7 * 24 * 60 * 60 * 1000;  // re-test a feed that refused direct access
+const DIRECT_KEY         = "RSSFeed_direct";
+
+/** fetch() that gives up after FETCH_TIMEOUT_MS instead of waiting forever. */
+async function fetchWithTimeout(url) {
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: ctrl.signal });
+  } catch (e) {
+    throw e.name === "AbortError" ? new Error("Timed out") : e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* Direct access.
+   Some publishers (NWS, USGS, Hacker News and others) let a browser read
+   their feed from another site; most do not. There is no way to ask first,
+   so each feed is tried directly once and the answer is remembered: feeds
+   that allow it skip the proxies from then on, and feeds that refuse are
+   not tried again for a week. A refusal is only recorded when a proxy then
+   succeeds, so being offline never marks a feed as blocked. */
+
+let directMemo = null;
+
+function directMemoLoad() {
+  if (directMemo) return directMemo;
+  try { directMemo = JSON.parse(localStorage.getItem(DIRECT_KEY)) || {}; }
+  catch { directMemo = {}; }
+  return directMemo;
+}
+
+function directMemoSet(url, ok) {
+  const memo = directMemoLoad();
+  memo[cacheKey(url)] = { ok, at: Date.now() };
+  try { localStorage.setItem(DIRECT_KEY, JSON.stringify(memo)); } catch {}
+}
+
+function shouldTryDirect(url) {
+  const entry = directMemoLoad()[cacheKey(url)];
+  if (!entry || entry.ok) return true;
+  return Date.now() - entry.at > DIRECT_RETRY_MS;
+}
+
+/** Turn RSS or Atom XML into article objects. */
+function parseFeedXml(text, source) {
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  if (doc.querySelector("parsererror")) throw new Error("XML parse error");
+
+  const items = Array.from(doc.querySelectorAll("item, entry"));
+  if (items.length === 0) throw new Error("No items found");
+
+  return items.map(item => {
+    const get = sel => {
+      const el = item.querySelector(sel);
+      return el ? (el.textContent || "") : "";
+    };
+    const linkEl  = item.querySelector("link");
+    const link    = get("link") || linkEl?.getAttribute("href") || "";
+    const pubDate = get("pubDate") || get("published") || get("updated") || null;
+
+    return {
+      title:       sanitizeTitle(get("title") || "Untitled", source.sanitize_headline),
+      link:        link.trim(),
+      pubDate:     pubDate ? normalizeDate(pubDate.trim()) : null,
+      description: get("description") || get("summary") || get("content") || "",
+      source:      source.name,
+      category:    source.category || "Uncategorized",
+      sourceUrl:   source.url,
+      headlineOnly: !!source.headline_only,
+    };
+  });
+}
+
+async function fetchFeedDirect(source) {
+  // An https page cannot fetch http, so ask for the https address instead.
+  const url = source.url.replace(/^http:\/\//i, "https://");
+  const res = await fetchWithTimeout(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return parseFeedXml(await res.text(), source);
+}
 
 async function fetchFeedViaRss2Json(source) {
   const params = new URLSearchParams({
@@ -580,7 +670,7 @@ async function fetchFeedViaRss2Json(source) {
     params.set("order_dir", "desc");
   }
 
-  const res = await fetch(`https://api.rss2json.com/v1/api.json?${params}`);
+  const res = await fetchWithTimeout(`https://api.rss2json.com/v1/api.json?${params}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
   const data = await res.json();
@@ -607,42 +697,11 @@ async function fetchFeedViaCorsProxy(source) {
   let lastError;
   for (const makeUrl of proxies) {
     try {
-      const res = await fetch(makeUrl(source.url));
+      const res = await fetchWithTimeout(makeUrl(source.url));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const text   = await res.text();
-      const parser = new DOMParser();
-      const doc    = parser.parseFromString(text, "application/xml");
-
-      const parseError = doc.querySelector("parsererror");
-      if (parseError) throw new Error("XML parse error");
-
-      const items  = Array.from(doc.querySelectorAll("item, entry"));
-      if (items.length === 0) throw new Error("No items found");
-
-      return items.map(item => {
-        const get = sel => {
-          const el = item.querySelector(sel);
-          return el ? (el.textContent || "") : "";
-        };
-        const linkEl  = item.querySelector("link");
-        const link    = get("link") || linkEl?.getAttribute("href") || "";
-        const pubDate = get("pubDate") || get("published") || get("updated") || null;
-
-        return {
-          title:       sanitizeTitle(get("title") || "Untitled", source.sanitize_headline),
-          link:        link.trim(),
-          pubDate:     pubDate ? normalizeDate(pubDate.trim()) : null,
-          description: get("description") || get("summary") || get("content") || "",
-          source:      source.name,
-          category:    source.category || "Uncategorized",
-          sourceUrl:   source.url,
-          headlineOnly: !!source.headline_only,
-        };
-      });
+      return parseFeedXml(await res.text(), source);
     } catch (e) {
       lastError = e;
-      continue;
     }
   }
   throw lastError || new Error("All CORS proxies failed");
@@ -669,28 +728,59 @@ function applySourceTransforms(articles, source) {
   });
 }
 
-async function fetchFeed(source) {
+/**
+ * Get one feed's articles.
+ *
+ * A saved copy younger than maxAgeMs is used as is. Otherwise the feed is
+ * fetched directly, then through rss2json, then through the CORS proxies.
+ * If all of those fail, a saved copy up to STALE_LIMIT_MS old is shown and
+ * flagged stale, so one bad minute at a proxy does not empty the page.
+ */
+async function fetchFeed(source, maxAgeMs) {
   const cached = readCache(source.url);
-  if (cached) {
+  const age    = cached ? Date.now() - cached.savedAt : Infinity;
+  if (cached && age <= maxAgeMs) {
     // writeCache stores post-transform articles, so transforming again would
     // decode entities a second time -- cached text would drift from live text.
-    return { articles: cached.articles, fromCache: true, error: null };
+    return { articles: cached.articles, fromCache: true, stale: false, error: null };
   }
-  try {
-    const articles = applySourceTransforms(await fetchFeedViaRss2Json(source), source);
-    writeCache(source.url, articles);
-    return { articles, fromCache: false, error: null };
-  } catch (e1) {
-    console.warn(`[RSSFeed] rss2json failed for "${source.name}": ${e1.message}`);
+
+  const tryDirect = shouldTryDirect(source.url);
+  const attempts  = [];
+  if (tryDirect) attempts.push(["direct", fetchFeedDirect]);
+  attempts.push(["rss2json", fetchFeedViaRss2Json], ["proxy", fetchFeedViaCorsProxy]);
+
+  let lastError;
+  for (const [how, fetcher] of attempts) {
     try {
-      const articles = applySourceTransforms(await fetchFeedViaCorsProxy(source), source);
+      const articles = applySourceTransforms(await fetcher(source), source);
+      if (tryDirect) directMemoSet(source.url, how === "direct");
       writeCache(source.url, articles);
-      return { articles, fromCache: false, error: null };
-    } catch (e2) {
-      console.error(`[RSSFeed] Both methods failed for "${source.name}": ${e2.message}`);
-      return { articles: [], fromCache: false, error: e2.message };
+      return { articles, fromCache: false, stale: false, error: null };
+    } catch (e) {
+      lastError = e;
+      console.warn(`[RSSFeed] ${how} failed for "${source.name}": ${e.message}`);
     }
   }
+
+  const message = lastError ? lastError.message : "Fetch failed";
+  if (cached && age <= STALE_LIMIT_MS) {
+    return { articles: cached.articles, fromCache: true, stale: true, savedAt: cached.savedAt, error: message };
+  }
+  console.error(`[RSSFeed] All methods failed for "${source.name}": ${message}`);
+  return { articles: [], fromCache: false, stale: false, error: message };
+}
+
+/** Run worker over items with at most `limit` running at once. */
+async function runPool(items, limit, worker) {
+  let next = 0;
+  const lane = async () => {
+    while (next < items.length) {
+      const item = items[next++];
+      try { await worker(item); } catch (e) { console.error("[RSSFeed]", e); }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane));
 }
 
 /* ============================================================
@@ -724,9 +814,11 @@ function renderClock() {
    RENDER — stats count
    ============================================================ */
 
+/** Article count; null while nothing has loaded yet. */
 function renderStatsBar(count) {
   const el = document.getElementById("stats-count-label");
-  if (el) el.textContent = `${count} ARTICLE${count !== 1 ? "S" : ""}`;
+  if (!el) return;
+  el.textContent = count === null ? "— ARTICLES" : `${count} ARTICLE${count !== 1 ? "S" : ""}`;
 }
 
 /* ============================================================
@@ -774,8 +866,13 @@ function renderSourcesPanel(statuses) {
       const isStale = s.latestPubDate && (Date.now() - s.latestPubDate > STALE_MS);
       const staleLabel = isStale ? relativeTime(new Date(s.latestPubDate).toISOString()) : "";
 
-      let statusCls, statusIcon;
-      if (s.error) {
+      let statusCls, statusIcon, ageLabel = staleLabel;
+      if (s.stale) {
+        // Fetch failed, but an earlier copy is on the page.
+        statusCls  = "src-stale";
+        statusIcon = "↩";
+        ageLabel   = "saved " + relativeTime(new Date(s.savedAt).toISOString());
+      } else if (s.error) {
         statusCls  = "src-fail";
         statusIcon = "✗";
       } else if (isStale) {
@@ -796,7 +893,7 @@ function renderSourcesPanel(statuses) {
                    data-source="${escHtml(s.name)}">
         <span class="src-icon">${statusIcon}</span>
         <span class="src-name">${escHtml(s.name)}</span>
-        ${isStale ? `<span class="src-stale-age">${escHtml(staleLabel)}</span>` : ""}
+        ${ageLabel && (isStale || s.stale) ? `<span class="src-stale-age">${escHtml(ageLabel)}</span>` : ""}
       </div>`;
     }).join("");
 
@@ -1018,14 +1115,17 @@ function applyFilters() {
   if (!wrapper) return;
 
   if (filtered.length === 0 && !isLoading) {
-    wrapper.innerHTML = `<div class="empty-state">No articles available.</div>`;
+    const allFailed = feedStatuses.length > 0 && feedStatuses.every(st => st.error && !st.count);
+    wrapper.innerHTML = allFailed
+      ? `<div class="error-card">⚠ Couldn't reach any feeds. Check your connection, then press Refresh.</div>`
+      : `<div class="empty-state">No articles available.</div>`;
     renderStatsBar(0);
     return;
   }
 
   if (filtered.length === 0) {
     // Still loading, no articles yet — keep progress bar visible
-    renderStatsBar(0);
+    renderStatsBar(null);
     return;
   }
 
@@ -1049,7 +1149,7 @@ function showLoadingState() {
   </div>
 </div>`;
   }
-  renderStatsBar(0);
+  renderStatsBar(null);
 }
 
 function updateProgress(done, total) {
@@ -1132,16 +1232,18 @@ async function loadAllFeeds(force = false) {
   const refreshBtn = document.getElementById("refresh-btn");
   if (refreshBtn) refreshBtn.disabled = true;
 
-  if (force) {
-    CFG.sources.forEach(s => {
-      try { localStorage.removeItem(cacheKey(s.url)); } catch {}
-    });
-  }
+  // A normal load uses saved copies up to cacheTTLMinutes old. Refresh only
+  // refetches feeds older than a couple of minutes, so pressing it twice
+  // does not send every feed through the proxies again.
+  const maxAgeMs = force ? REFRESH_MIN_AGE_MS : CFG.cacheTTLMinutes * 60 * 1000;
 
   showLoadingState();
 
-  const sources = CFG.sources;
-  if (!sources || sources.length === 0) {
+  // Alerts and News first, so the top of the page fills in soonest.
+  const ORDER   = { Alerts: 0, News: 1 };
+  const rank    = s => (s.category in ORDER ? ORDER[s.category] : 2);
+  const sources = (CFG.sources || []).slice().sort((a, b) => rank(a) - rank(b));
+  if (sources.length === 0) {
     showLoadError("No sources configured. Add feeds to window.BRIEF_CONFIG.sources in RSSFeed.html.");
     isLoading = false;
     if (refreshBtn) refreshBtn.disabled = false;
@@ -1155,9 +1257,8 @@ async function loadAllFeeds(force = false) {
   // Track whether we've rendered articles yet (for the "All" tab progressive display)
   let hasRenderedArticles = false;
 
-  const results = await Promise.allSettled(
-    sources.map(source =>
-      fetchFeed(source).then(result => {
+  await runPool(sources, FETCH_CONCURRENCY, source =>
+      fetchFeed(source, maxAgeMs).then(result => {
         done++;
 
         rawBySource[source.name] = result.articles;
@@ -1169,6 +1270,8 @@ async function loadAllFeeds(force = false) {
           count:     result.articles.length,
           error:     result.error,
           fromCache: result.fromCache,
+          stale:     result.stale,
+          savedAt:   result.savedAt || null,
           latestPubDate: result.articles.reduce((latest, a) => {
             if (!a.pubDate) return latest;
             const t = new Date(a.pubDate).getTime();
@@ -1218,7 +1321,6 @@ async function loadAllFeeds(force = false) {
 
         return result.articles;
       })
-    )
   );
 
   // Final rebuild to ensure consistent state
@@ -1240,7 +1342,18 @@ async function loadAllFeeds(force = false) {
    INIT
    ============================================================ */
 
+/** Delete caches left by the page's old name (RSS Brief). */
+function clearOldCaches() {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("RSSBrief_")) localStorage.removeItem(key);
+    }
+  } catch {}
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  clearOldCaches();
   renderHeader();
   initSourcesToggle();
 
