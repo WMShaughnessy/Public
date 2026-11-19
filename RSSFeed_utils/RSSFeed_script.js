@@ -16,7 +16,8 @@
  *  - Saved copies keep each feed's newest 20 items; if storage fills up,
  *    old and unconfigured feeds are cleared first
  *  - Duplicates caught by link as well as by headline
- *  - "Show N" button picks 15 / 30 / 50 / 100 articles, remembered per browser
+ *  - Tapping the blue article count cycles 15 / 30 / 50 / 100 articles,
+ *    remembered per browser
  *  - Collapsible source list grouped by category, clickable to filter
  *  - Source filter draws up to 15 most recent articles from raw feed cache
  *  - Feed failure indicators per source
@@ -1488,7 +1489,7 @@ async function loadAllFeeds(force = false) {
 }
 
 /* ============================================================
-   ARTICLE COUNT  —  "Show N" button cycles through COUNT_CHOICES
+   ARTICLE COUNT  —  tapping the blue count bar cycles COUNT_CHOICES
    ============================================================ */
 
 const COUNT_CHOICES = [15, 30, 50, 100];
@@ -1502,22 +1503,22 @@ function loadArticleCount() {
   } catch {}
 }
 
-function renderCountButton() {
-  const btn = document.getElementById("count-btn");
-  if (!btn) return;
-  btn.textContent = `Show ${CFG.totalArticles}`;
-  btn.setAttribute("aria-label", `Showing up to ${CFG.totalArticles} articles. Press to change.`);
+/** The bar's label shows the count on screen; screen readers also hear the limit. */
+function renderCountControl() {
+  const bar = document.getElementById("stats-count");
+  if (bar) bar.setAttribute("aria-label",
+    `Showing up to ${CFG.totalArticles} articles. Press to change.`);
 }
 
-function initCountButton() {
-  const btn = document.getElementById("count-btn");
-  if (!btn) return;
-  renderCountButton();
-  btn.addEventListener("click", () => {
+function initCountControl() {
+  const bar = document.getElementById("stats-count");
+  if (!bar) return;
+  renderCountControl();
+  const cycle = () => {
     const i = COUNT_CHOICES.indexOf(CFG.totalArticles);
     CFG.totalArticles = COUNT_CHOICES[(i + 1) % COUNT_CHOICES.length];
     try { localStorage.setItem(COUNT_KEY, String(CFG.totalArticles)); } catch {}
-    renderCountButton();
+    renderCountControl();
     // While loading, the next progressive redraw picks the new count up.
     if (isLoading) return;
     rebuildArticlesFromRaw();
@@ -1527,6 +1528,10 @@ function initCountButton() {
     }
     renderCategoryFilters(allArticles);
     applyFilters();
+  };
+  bar.addEventListener("click", cycle);
+  bar.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); cycle(); }
   });
 }
 
@@ -1549,7 +1554,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadArticleCount();
   renderHeader();
   initSourcesToggle();
-  initCountButton();
+  initCountControl();
 
   // Background tabs run timers late; catch the clock up on return.
   document.addEventListener("visibilitychange", () => { if (!document.hidden) renderClock(); });
