@@ -9,7 +9,7 @@
  *  - Remembers the route (direct, rss2json or a proxy) that last worked for
  *    each feed and tries it first; feeds that allow it skip the proxies
  *  - Skips rss2json or a proxy for the rest of a load once it fails 4 times
- *  - At most 8 feeds in flight, each with a 10 s timeout
+ *  - At most 16 feeds in flight, each with a 10 s timeout
  *  - Shows saved articles at once, then replaces them as feeds refresh
  *  - A failed feed shows its last good copy (up to 24 h) marked stale
  *  - Refresh only refetches feeds older than 2 minutes
@@ -645,7 +645,7 @@ function _weightedSelect(pool, total, NEWS_SLOTS, BIZ_SLOTS, GOVLEG_SLOTS, TECH_
    ============================================================ */
 
 const FETCH_TIMEOUT_MS   = 10000;                    // a hung request must not stall the load
-const FETCH_CONCURRENCY  = 8;                        // feeds in flight at once
+const FETCH_CONCURRENCY  = 16;                       // feeds in flight at once
 const REFRESH_MIN_AGE_MS = 2 * 60 * 1000;            // Refresh keeps copies younger than this
 const STALE_LIMIT_MS     = 24 * 60 * 60 * 1000;      // oldest copy shown when a feed fails
 const DIRECT_RETRY_MS    = 7 * 24 * 60 * 60 * 1000;  // re-test a feed that refused direct access
@@ -1430,8 +1430,20 @@ async function loadAllFeeds(force = false) {
       renderCategoryFilters(allArticles);
     }
   };
+  // Each redraw re-ranks the whole list, so cards jump around while feeds
+  // arrive. When saved articles are already on screen, leave them still and
+  // only move the progress bar; the list is swapped once, when loading ends.
+  // From an empty page, show the first articles quickly, then redraw at most
+  // once a second.
+  let shownFromSaved = false;
+  let drawnOnce      = false;
   const scheduleRender = () => {
-    if (!renderTimer) renderTimer = setTimeout(renderProgress, 120);
+    if (shownFromSaved) { updateProgress(done, sources.length); return; }
+    if (renderTimer) return;
+    renderTimer = setTimeout(() => {
+      renderProgress();
+      if (allArticles.length > 0) drawnOnce = true;
+    }, drawnOnce ? 1000 : 120);
   };
 
   // Start from the saved copies (up to a day old) so the page has articles at
@@ -1442,7 +1454,10 @@ async function loadAllFeeds(force = false) {
       rawBySource[source.name] = cached.articles;
     }
   }
-  if (Object.keys(rawBySource).length > 0) renderProgress();
+  if (Object.keys(rawBySource).length > 0) {
+    renderProgress();
+    shownFromSaved = allArticles.length > 0;
+  }
 
   await runPool(sources, FETCH_CONCURRENCY, source =>
       fetchFeed(source, maxAgeMs).then(result => {
