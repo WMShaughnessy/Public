@@ -109,6 +109,16 @@ a:hover { text-decoration: underline; }
   align-items: center;
   width: 100%;
 }
+/* Tapping the count cycles how many articles show (15 / 30 / 50 / 100). */
+.stats-count[role="button"] {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.stats-count[role="button"]:focus-visible {
+  outline: 3px solid var(--yellow);
+  outline-offset: -7px;
+}
 .sources-toggle-btn {
   font-family: var(--font);
   font-size: 10px;
