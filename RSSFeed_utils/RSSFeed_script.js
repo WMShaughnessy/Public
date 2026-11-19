@@ -16,6 +16,7 @@
  *  - Saved copies keep each feed's newest 20 items; if storage fills up,
  *    old and unconfigured feeds are cleared first
  *  - Duplicates caught by link as well as by headline
+ *  - "Show N" button picks 15 / 30 / 50 / 100 articles, remembered per browser
  *  - Collapsible source list grouped by category, clickable to filter
  *  - Source filter draws up to 15 most recent articles from raw feed cache
  *  - Feed failure indicators per source
@@ -650,6 +651,24 @@ const DIRECT_RETRY_MS    = 7 * 24 * 60 * 60 * 1000;  // re-test a feed that refu
 const ROUTE_KEY          = "RSSFeed_routes";
 const BREAKER_LIMIT      = 4;                        // failures in a row before a service is skipped
 
+/**
+ * An error that says the service itself is in trouble (unreachable, timed
+ * out, rate-limiting or erroring), as opposed to one feed it cannot read.
+ * Only these count toward the circuit breaker below.
+ */
+function serviceError(message) {
+  const e = new Error(message);
+  e.service = true;
+  return e;
+}
+
+/** Throw for a bad HTTP status, flagging the ones that mean the service is struggling. */
+function checkStatus(res) {
+  if (res.ok) return;
+  if (res.status === 429 || res.status >= 500) throw serviceError(`HTTP ${res.status}`);
+  throw new Error(`HTTP ${res.status}`);
+}
+
 /** fetch() that gives up after FETCH_TIMEOUT_MS instead of waiting forever. */
 async function fetchWithTimeout(url) {
   const ctrl  = new AbortController();
@@ -657,7 +676,9 @@ async function fetchWithTimeout(url) {
   try {
     return await fetch(url, { signal: ctrl.signal });
   } catch (e) {
-    throw e.name === "AbortError" ? new Error("Timed out") : e;
+    // A timeout or a refused connection. For "direct" this is usually the
+    // publisher refusing browser access, which the breaker ignores anyway.
+    throw serviceError(e.name === "AbortError" ? "Timed out" : (e.message || "Network error"));
   } finally {
     clearTimeout(timer);
   }
@@ -708,8 +729,12 @@ function routeOrder(url) {
 /* Circuit breaker.
    When rss2json is rate-limiting or a proxy is down, every feed would
    otherwise wait for it to fail before moving on. After BREAKER_LIMIT
-   failures in a row a shared service is skipped for the rest of the load.
-   Direct access is per publisher, so it never trips. Reset on every load. */
+   service failures in a row (timeouts, refused connections, HTTP 429/5xx,
+   rss2json's own rate-limit message) that service is skipped for the rest
+   of the load. A feed the service merely cannot read (a 404, bad XML) does
+   not count, so a run of broken feeds cannot switch rss2json off for the
+   healthy ones. Direct access is per publisher, so it never trips. Reset on
+   every load. */
 
 let serviceFailures = {};
 
@@ -717,9 +742,10 @@ function serviceUsable(how) {
   return how === "direct" || (serviceFailures[how] || 0) < BREAKER_LIMIT;
 }
 
-function serviceResult(how, ok) {
+function serviceResult(how, error) {
   if (how === "direct") return;
-  serviceFailures[how] = ok ? 0 : (serviceFailures[how] || 0) + 1;
+  if (!error) serviceFailures[how] = 0;
+  else if (error.service) serviceFailures[how] = (serviceFailures[how] || 0) + 1;
 }
 
 /** First child element with one of these tag names (qualified names work, e.g. "dc:date"). */
@@ -773,7 +799,7 @@ function parseFeedXml(text, source) {
 
 async function fetchXml(url, source) {
   const res = await fetchWithTimeout(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  checkStatus(res);
   return parseFeedXml(await res.text(), source);
 }
 
@@ -789,10 +815,13 @@ async function fetchFeedViaRss2Json(source) {
   }
 
   const res = await fetchWithTimeout(`https://api.rss2json.com/v1/api.json?${params}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  checkStatus(res);
 
   const data = await res.json();
-  if (data.status !== "ok") throw new Error(data.message || "rss2json error");
+  if (data.status !== "ok") {
+    const message = data.message || "rss2json error";
+    throw /limit|quota|too many/i.test(message) ? serviceError(message) : new Error(message);
+  }
 
   return (data.items || []).map(item => ({
     title:       sanitizeTitle(item.title || "Untitled", source.sanitize_headline),
@@ -858,12 +887,12 @@ async function fetchFeed(source, maxAgeMs) {
     if (!serviceUsable(how)) continue;
     try {
       const articles = applySourceTransforms(await ROUTES[how](source), source);
-      serviceResult(how, true);
+      serviceResult(how, null);
       routeSave(source.url, how, directFailed);
       writeCache(source.url, articles);
       return { articles, fromCache: false, stale: false, error: null };
     } catch (e) {
-      serviceResult(how, false);
+      serviceResult(how, e);
       if (how === "direct") directFailed = true;
       lastError = e;
       console.warn(`[RSSFeed] ${how} failed for "${source.name}": ${e.message}`);
@@ -1459,6 +1488,49 @@ async function loadAllFeeds(force = false) {
 }
 
 /* ============================================================
+   ARTICLE COUNT  —  "Show N" button cycles through COUNT_CHOICES
+   ============================================================ */
+
+const COUNT_CHOICES = [15, 30, 50, 100];
+const COUNT_KEY     = "RSSFeed_count";
+
+/** The viewer's saved choice, else the config's totalArticles. */
+function loadArticleCount() {
+  try {
+    const saved = parseInt(localStorage.getItem(COUNT_KEY), 10);
+    if (COUNT_CHOICES.includes(saved)) CFG.totalArticles = saved;
+  } catch {}
+}
+
+function renderCountButton() {
+  const btn = document.getElementById("count-btn");
+  if (!btn) return;
+  btn.textContent = `Show ${CFG.totalArticles}`;
+  btn.setAttribute("aria-label", `Showing up to ${CFG.totalArticles} articles. Press to change.`);
+}
+
+function initCountButton() {
+  const btn = document.getElementById("count-btn");
+  if (!btn) return;
+  renderCountButton();
+  btn.addEventListener("click", () => {
+    const i = COUNT_CHOICES.indexOf(CFG.totalArticles);
+    CFG.totalArticles = COUNT_CHOICES[(i + 1) % COUNT_CHOICES.length];
+    try { localStorage.setItem(COUNT_KEY, String(CFG.totalArticles)); } catch {}
+    renderCountButton();
+    // While loading, the next progressive redraw picks the new count up.
+    if (isLoading) return;
+    rebuildArticlesFromRaw();
+    // A smaller count can leave the chosen category with no articles.
+    if (activeCategory && !displayCategories(allArticles).includes(activeCategory)) {
+      activeCategory = null;
+    }
+    renderCategoryFilters(allArticles);
+    applyFilters();
+  });
+}
+
+/* ============================================================
    INIT
    ============================================================ */
 
@@ -1474,8 +1546,10 @@ function clearOldCaches() {
 
 document.addEventListener("DOMContentLoaded", () => {
   clearOldCaches();
+  loadArticleCount();
   renderHeader();
   initSourcesToggle();
+  initCountButton();
 
   // Background tabs run timers late; catch the clock up on return.
   document.addEventListener("visibilitychange", () => { if (!document.hidden) renderClock(); });
