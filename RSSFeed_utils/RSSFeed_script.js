@@ -243,11 +243,70 @@ function safeHref(url) {
 
 /** Build the one anchor shape this file emits. */
 function buildLink(href, label, cls) {
+  return buildLinkHtml(href, escHtml(label), cls);
+}
+
+/** As buildLink, but the label is markup this file already made safe. */
+function buildLinkHtml(href, labelHtml, cls) {
   const safe = safeHref(href);
-  const text = escHtml(label);
-  if (!safe) return text;
+  if (!safe) return labelHtml;
   return `<a href="${escHtml(safe)}" target="_blank" rel="noopener noreferrer"` +
-         (cls ? ` class="${cls}"` : "") + `>${text}</a>`;
+         (cls ? ` class="${cls}"` : "") + `>${labelHtml}</a>`;
+}
+
+/* Inline formatting a headline may keep. Publishers such as Slate put book
+   and show names in <em>; everything else is stripped. Keys are the tags we
+   accept, values the tag we emit. */
+const INLINE_TAGS = { em: "em", i: "em", strong: "strong", b: "strong" };
+
+// Only something shaped like a real tag counts, so "5 < 6 and 7 > 3" in a
+// headline is left alone rather than eaten.
+const TAG_RX = /<\/?[a-zA-Z][^<>]*>/g;
+
+/**
+ * Turn a feed headline into safe HTML that keeps italics and bold.
+ *
+ * Allowed tags become NUL-delimited markers, every other tag is stripped,
+ * the text is escaped, and only then do the markers become tags again --
+ * tags we write ourselves, with no attributes, closed in the right order.
+ */
+function formatTitleHtml(title) {
+  let text = String(title || "").replace(/\u0000/g, "");
+
+  const mark = str => str.replace(/<(\/?)([a-zA-Z]+)(?:\s[^<>]*)?>/g, (m, close, name) => {
+    const tag = INLINE_TAGS[name.toLowerCase()];
+    return tag ? `\u0000${close ? "/" : ""}${tag}\u0000` : m;
+  });
+
+  // Same reasoning as sanitizePreview: some feeds escape markup once or
+  // twice, so decode and strip until the text stops changing.
+  for (let i = 0; i < 3; i++) {
+    const next = mark(String(decodeEntities(text))).replace(TAG_RX, "");
+    if (next === text) break;
+    text = next;
+  }
+
+  const html  = escHtml(text.replace(/\s+/g, " ").trim());
+  const open  = [];
+  const out   = html.replace(/\u0000(\/?)(em|strong)\u0000/g, (_, close, tag) => {
+    if (!close) {
+      if (open.includes(tag)) return "";   // already inside one; nesting adds nothing
+      open.push(tag);
+      return `<${tag}>`;
+    }
+    const at = open.lastIndexOf(tag);
+    if (at === -1) return "";              // stray closer
+    // Close anything opened inside it first, so the output stays well formed.
+    const closed = open.splice(at).reverse().map(t => `</${t}>`).join("");
+    return closed;
+  });
+  const result = out + open.reverse().map(t => `</${t}>`).join("");
+  return text.replace(/\u0000[^\u0000]*\u0000/g, "").trim() ? result : "Untitled";
+}
+
+/** A headline as plain text, for matching and dedup rather than display. */
+function plainTitle(title) {
+  return String(title || "").replace(TAG_RX, "");
 }
 
 function sanitizePreview(html) {
@@ -354,7 +413,7 @@ function readMeta() {
    ============================================================ */
 
 function normalizeTitle(title) {
-  return (title || "")
+  return plainTitle(title)
     .toLowerCase()
     .replace(/[^\w\s]/g, " ")
     .replace(/\s+/g, " ")
@@ -426,7 +485,7 @@ const TECH_SPAM_PATTERNS = [
 ];
 
 function isTechSpam(article) {
-  const text = ((article.title || "") + " " + (article.description || "")).toLowerCase();
+  const text = (plainTitle(article.title) + " " + (article.description || "")).toLowerCase();
   return TECH_SPAM_PATTERNS.some(rx => rx.test(text));
 }
 
@@ -926,7 +985,7 @@ function buildArticleCard(article, colorIndex) {
       ${article.category ? `<span class="card-category ${catCls}">${escHtml(article.category)}</span>` : ""}
     </div>
     <div class="card-title">
-      ${buildLink(article.link, article.title)}
+      ${buildLinkHtml(article.link, formatTitleHtml(article.title))}
     </div>
     ${previewHtml}
     ${articleLink ? `<a class="card-read" href="${escHtml(articleLink)}" target="_blank" rel="noopener noreferrer">Read →</a>` : ""}
